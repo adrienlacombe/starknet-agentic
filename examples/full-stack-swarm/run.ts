@@ -292,7 +292,7 @@ function startSisna(args: {
   return { child, stop, proxyUrl: `http://127.0.0.1:${args.port}` };
 }
 
-function declareSessionAccountIfRequested(args: {
+async function declareSessionAccountIfRequested(args: {
   enabled: boolean;
   repoRoot: string;
   expectedClassHash: string;
@@ -325,7 +325,12 @@ function declareSessionAccountIfRequested(args: {
   const account = new Account({ provider, address: args.deployerAddress, signer: args.deployerPrivateKey });
   // Declare if not already declared.
   // NOTE: declareIfNot exists in starknet.js v8 and is what Starkclaw uses for pinned builds.
-  return account.declareIfNot({ contract: sierra, casm }).then(() => ({ ran: true }));
+  const result = (await account.declareIfNot({ contract: sierra, casm })) as any;
+  const txHash = result?.transaction_hash;
+  if (typeof txHash === "string" && txHash.length > 0) {
+    await provider.waitForTransaction(txHash, { retries: 120, retryInterval: 3_000 });
+  }
+  return { ran: true };
 }
 
 async function main() {
@@ -571,6 +576,15 @@ async function main() {
             });
             agent.sessionKeyRegistered = true;
           }
+
+          // SISNA/keyring signs session txs using SNIP-12 v2.
+          // SessionAccount defaults to v1, so force v2 before proxy mode.
+          await sidecar.callTool("starknet_invoke_contract", {
+            contractAddress: agent.sessionAccountAddress,
+            entrypoint: "set_session_signature_mode",
+            calldata: ["2"],
+            gasfree: gasfreeOwner,
+          });
 
           // Spending policy for the sell token (per-call + per-window)
           const [maxPerCallLow, maxPerCallHigh] = toU256Calldata(maxPerCallRaw);
