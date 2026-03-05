@@ -43,6 +43,9 @@ without ambiguous "done" claims.
 - Runtime guardrails:
   - `packages/starknet-mcp-server/src/index.ts`
   - `packages/starknet-mcp-server/src/helpers/keyringProxySigner.ts`
+- Auth conformance workflows:
+  - `.github/workflows/signer-auth-conformance.yml`
+  - `.github/workflows/session-signature-v2-conformance.yml`
 - Rotation and incident runbook:
   - `docs/security/SIGNER_PROXY_ROTATION_RUNBOOK.md`
 
@@ -54,4 +57,3 @@ Post this in each issue before closing:
 - Evidence links (workflow runs, merged PRs, test output)
 - Residual risk (if any)
 - Explicit statement: "No open acceptance criteria remain" or list remaining deltas
-
