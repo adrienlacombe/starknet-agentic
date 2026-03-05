@@ -5,6 +5,7 @@ import {
   compareVectorGroup,
   parseArgs,
   stableStringify,
+  toMapById,
 } from "./check-session-signature-parity.mjs";
 
 test("stableStringify canonicalizes object key order", () => {
@@ -52,6 +53,17 @@ test("compareVectorGroup reports missing, extra, and changed IDs", () => {
   assert.deepEqual(result.changed, ["changed"]);
 });
 
+test("compareVectorGroup flags changed payload even when IDs match", () => {
+  const local = [{ id: "only", nested: { a: 1, b: 2 } }];
+  const remote = [{ id: "only", nested: { a: 1, b: 3 } }];
+
+  const result = compareVectorGroup("sessionVectors", local, remote);
+  assert.equal(result.hasIssues, true);
+  assert.deepEqual(result.missingInRemote, []);
+  assert.deepEqual(result.missingInLocal, []);
+  assert.deepEqual(result.changed, ["only"]);
+});
+
 test("compareVectorGroup passes when arrays are parity-equal", () => {
   const local = [
     { id: "one", value: { x: 1, y: 2 } },
@@ -67,6 +79,13 @@ test("compareVectorGroup passes when arrays are parity-equal", () => {
   assert.deepEqual(result.missingInRemote, []);
   assert.deepEqual(result.missingInLocal, []);
   assert.deepEqual(result.changed, []);
+});
+
+test("toMapById rejects vectors missing ids", () => {
+  assert.throws(
+    () => toMapById([{ id: "ok" }, { notId: "bad" }]),
+    /Vector without string id/
+  );
 });
 
 test("asArrayIfPresent returns arrays and null otherwise", () => {
