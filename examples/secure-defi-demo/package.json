@@ -8,6 +8,7 @@
     "run": "npx tsx run.ts --mode dry-run",
     "run:execute": "npx tsx run.ts --mode execute",
     "run:withdraw": "npx tsx run.ts --mode execute --with-withdraw",
+    "run:strict": "STRICT_SECURITY_PROOF=1 npx tsx run.ts --mode execute",
     "test": "node --test --import tsx test/*.test.ts"
   },
   "dependencies": {

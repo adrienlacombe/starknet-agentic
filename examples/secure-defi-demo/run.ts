@@ -13,6 +13,7 @@ import {
   SessionStateSchema,
   buildSummary,
   type DemoArtifact,
+  type SecurityClaim,
   type SessionState,
   type StepResult,
 } from "./src/types.js";
@@ -87,7 +88,9 @@ function isTimeoutError(error: unknown): boolean {
 
 function isPolicyRejectionError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /policy violation|blocked by policy|not covered by policy|exceeds policy|is not in the allowed|denied by policy/i.test(message);
+  return /policy violation|blocked by policy|not covered by policy|exceeds policy|is not in the allowed|denied by policy|spending:.*exceeds|spending.*denied/i.test(
+    message,
+  );
 }
 
 function isSessionRejectionError(error: unknown): boolean {
@@ -128,6 +131,98 @@ function normalizeHexAddress(value: string): string {
 
 function asNonEmptyString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function extractTxHash(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const match = value.match(/0x[0-9a-fA-F]+/);
+  return match?.[0] ?? null;
+}
+
+function findStep(steps: StepResult[], id: string): StepResult | undefined {
+  return steps.find((step) => step.id === id);
+}
+
+function buildClaims(steps: StepResult[], artifactPath: string, strict: boolean, starkzapEnabled: boolean): SecurityClaim[] {
+  const claims: SecurityClaim[] = [];
+
+  const policyStep = findStep(steps, "policy_rejection_probe");
+  const policyExpected = policyStep?.status === "ok" && policyStep.details?.expectedRejection === true;
+  const policyOnchainRevert = policyExpected && policyStep.details?.onchainRevert === true;
+  const policyTxHash =
+    asNonEmptyString(policyStep?.details?.txHash) ?? extractTxHash(asNonEmptyString(policyStep?.details?.reason));
+  claims.push({
+    claimId: "oversized_spend_denied",
+    required: strict,
+    proof_status:
+      strict ? (policyOnchainRevert && policyTxHash ? "proved" : "missing") : policyExpected ? "proved" : "missing",
+    tx_hash: policyTxHash,
+    evidence_path: "steps.policy_rejection_probe",
+    note: strict
+      ? "Strict mode requires on-chain REVERTED evidence with transaction hash."
+      : "Preflight policy rejection evidence.",
+  });
+
+  const selectorStep = findStep(steps, "forbidden_selector_probe");
+  const selectorProved = selectorStep?.status === "ok" && selectorStep.details?.expectedRejection === true;
+  claims.push({
+    claimId: "forbidden_selector_denied",
+    required: strict,
+    proof_status: selectorProved ? "proved" : "missing",
+    tx_hash: extractTxHash(asNonEmptyString(selectorStep?.details?.reason)),
+    evidence_path: "steps.forbidden_selector_probe",
+  });
+
+  const sessionStep = findStep(steps, "expired_session_probe");
+  const sessionProved = sessionStep?.status === "ok" && sessionStep.details?.expectedRejection === true;
+  claims.push({
+    claimId: "revoked_or_expired_session_blocked",
+    required: strict,
+    proof_status: sessionProved ? "proved" : "missing",
+    tx_hash: extractTxHash(asNonEmptyString(sessionStep?.details?.reason)),
+    evidence_path: "steps.expired_session_probe",
+    note: "Requires proxy signer path with inactive/revoked session evidence.",
+  });
+
+  const identityStep = findStep(steps, "erc8004_identity");
+  const identityProved = identityStep?.status === "ok";
+  claims.push({
+    claimId: "erc8004_identity_path",
+    required: strict,
+    proof_status: identityProved ? "proved" : "missing",
+    tx_hash: null,
+    evidence_path: "steps.erc8004_identity",
+  });
+
+  const anchorStep = findStep(steps, "base_attestation_anchor");
+  const anchorTx = asNonEmptyString(anchorStep?.details?.transactionHash) ?? null;
+  const anchorProved =
+    anchorStep?.status === "ok" &&
+    anchorTx !== null &&
+    asNonEmptyString(anchorStep.details?.readBack) === asNonEmptyString(anchorStep.details?.value);
+  claims.push({
+    claimId: "base_to_starknet_anchor_verified",
+    required: strict,
+    proof_status: anchorProved ? "proved" : "missing",
+    tx_hash: anchorTx,
+    evidence_path: "steps.base_attestation_anchor",
+  });
+
+  const starkzapStep = findStep(steps, "starkzap_receipt");
+  const starkzapTx = asNonEmptyString(starkzapStep?.details?.transactionHash) ?? null;
+  const starkzapProved = starkzapStep?.status === "ok" && starkzapTx !== null;
+  claims.push({
+    claimId: "starkzap_execution_receipt",
+    required: strict && starkzapEnabled,
+    proof_status: starkzapEnabled ? (starkzapProved ? "proved" : "missing") : "not_applicable",
+    tx_hash: starkzapTx,
+    evidence_path: starkzapEnabled
+      ? asNonEmptyString(starkzapStep?.details?.evidencePath) ?? "steps.starkzap_receipt"
+      : artifactPath,
+    note: starkzapEnabled ? undefined : "Set DEMO_ENABLE_STARKZAP_PROOF=1 to require this claim.",
+  });
+
+  return claims;
 }
 
 async function fetchReceipt(rpcUrl: string, txHash: string): Promise<unknown> {
@@ -190,6 +285,7 @@ function renderMarkdownSummary(artifact: DemoArtifact): string {
     "",
     `- Run ID: \`${artifact.runId}\``,
     `- Mode: \`${artifact.mode}\``,
+    `- Strict security proof: \`${artifact.strictSecurityProof}\``,
     `- Network: \`${artifact.networkLabel}\``,
     `- Account: \`${artifact.accountAddress}\``,
     `- Signer mode: \`${artifact.signerMode}\``,
@@ -212,6 +308,15 @@ function renderMarkdownSummary(artifact: DemoArtifact): string {
   for (const step of artifact.steps) {
     const notes = step.error ?? (step.details ? JSON.stringify(step.details) : "");
     lines.push(`| ${step.id} | ${step.status} | ${notes.replaceAll("|", "\\|")} |`);
+  }
+
+  if (artifact.claims.length > 0) {
+    lines.push("", "## Claims", "", "| Claim | Required | Status | Tx Hash | Evidence |", "| --- | --- | --- | --- | --- |");
+    for (const claim of artifact.claims) {
+      lines.push(
+        `| ${claim.claimId} | ${claim.required} | ${claim.proof_status} | ${claim.tx_hash ?? ""} | ${claim.evidence_path.replaceAll("|", "\\|")} |`,
+      );
+    }
   }
 
   if (artifact.recommendations.length > 0) {
@@ -340,7 +445,7 @@ async function main(): Promise<void> {
 
           if (!agentId && transactionHash && config.identityRegistryAddress) {
             const receipt = await fetchReceipt(config.rpcUrl, transactionHash);
-            agentId = parseRegisteredAgentIdFromReceipt(receipt, config.identityRegistryAddress);
+            agentId = parseRegisteredAgentIdFromReceipt(receipt, config.identityRegistryAddress) ?? undefined;
           }
 
           if (!agentId) {
@@ -416,10 +521,14 @@ async function main(): Promise<void> {
         ),
       );
     } else {
+      const anchoredBaseAttestation = baseAttestation;
+      if (!anchoredBaseAttestation) {
+        throw new Error("Missing base attestation for anchor step.");
+      }
       steps.push(
         await runStep("base_attestation_anchor", "Anchor Base attestation hash on ERC-8004 metadata", async () => {
           const key = config.baseAnchorMetadataKey;
-          const value = baseAttestation.sha256;
+          const value = anchoredBaseAttestation.sha256;
 
           const setResult = (await sidecar.callTool("starknet_set_agent_metadata", {
             agent_id: resolvedAgentId,
@@ -536,10 +645,14 @@ async function main(): Promise<void> {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (isPolicyRejectionError(error)) {
+          const txHash = extractTxHash(message);
+          const onchainRevert = /status\s*=\s*REVERTED/i.test(message) && txHash !== null;
           return {
             expectedRejection: true,
             amount: config.rejectionProbeAmount,
             reason: message,
+            txHash,
+            onchainRevert,
           };
         }
         throw error;
@@ -627,7 +740,8 @@ async function main(): Promise<void> {
     (step) =>
       step.id === "policy_rejection_probe" &&
       step.status === "ok" &&
-      Boolean(step.details && step.details.expectedRejection === true),
+      Boolean(step.details && step.details.expectedRejection === true) &&
+      (!config.strictSecurityProof || step.details?.onchainRevert === true),
   );
 
   if (config.mode === "execute" && policyProbePassed) {
@@ -773,6 +887,73 @@ async function main(): Promise<void> {
     steps.push(skippedStep("vesu_withdraw", "Execute Vesu withdraw", "Run with --mode execute --with-withdraw"));
   }
 
+  if (config.starkzapProofEnabled) {
+    steps.push(
+      await runStep("starkzap_receipt", "Attach Starkzap execution receipt evidence", async () => {
+        const rawPath = config.starkzapEvidencePath;
+        if (!rawPath) {
+          throw new Error("Missing DEMO_STARKZAP_EVIDENCE_PATH");
+        }
+        const evidencePath = path.resolve(rawPath);
+        if (!fs.existsSync(evidencePath)) {
+          throw new Error(`Starkzap evidence file not found: ${evidencePath}`);
+        }
+        const raw = fs.readFileSync(evidencePath, "utf8");
+        const txHash = extractTxHash(raw);
+        if (!txHash) {
+          throw new Error(`No Starkzap transaction hash found in evidence file: ${evidencePath}`);
+        }
+        return { evidencePath, transactionHash: txHash };
+      }),
+    );
+  } else {
+    steps.push(
+      skippedStep(
+        "starkzap_receipt",
+        "Attach Starkzap execution receipt evidence",
+        "Set DEMO_ENABLE_STARKZAP_PROOF=1 and DEMO_STARKZAP_EVIDENCE_PATH to enforce Starkzap proof claim.",
+      ),
+    );
+  }
+
+  const claims = buildClaims(
+    steps,
+    path.resolve(config.outputDir),
+    config.strictSecurityProof,
+    config.starkzapProofEnabled,
+  );
+  const missingRequiredClaims = claims.filter(
+    (claim) => claim.required && claim.proof_status !== "proved",
+  );
+
+  if (config.strictSecurityProof) {
+    const stamp = nowIso();
+    if (missingRequiredClaims.length > 0) {
+      steps.push({
+        id: "strict_security_gate",
+        title: "Enforce strict security proof gate",
+        status: "failed",
+        startedAt: stamp,
+        endedAt: stamp,
+        error: `Missing required claims: ${missingRequiredClaims.map((claim) => claim.claimId).join(", ")}`,
+        details: {
+          missingClaims: missingRequiredClaims.map((claim) => claim.claimId),
+        },
+      });
+    } else {
+      steps.push({
+        id: "strict_security_gate",
+        title: "Enforce strict security proof gate",
+        status: "ok",
+        startedAt: stamp,
+        endedAt: stamp,
+        details: {
+          verifiedClaims: claims.filter((claim) => claim.required).map((claim) => claim.claimId),
+        },
+      });
+    }
+  }
+
   const summary = buildSummary(steps);
   const recommendations: string[] = [];
 
@@ -786,6 +967,14 @@ async function main(): Promise<void> {
 
   if (!baseAttestation) {
     recommendations.push("Provide DEMO_BASE_ATTESTATION_PATH to include Base reputation evidence in artifact.");
+  }
+
+  if (config.strictSecurityProof && missingRequiredClaims.length > 0) {
+    recommendations.push(
+      `Strict proof gate failed. Missing required claims: ${missingRequiredClaims
+        .map((claim) => claim.claimId)
+        .join(", ")}`,
+    );
   }
 
   if (
@@ -810,9 +999,11 @@ async function main(): Promise<void> {
     endedAt: nowIso(),
     accountAddress: config.accountAddress,
     signerMode: config.signerMode,
+    strictSecurityProof: config.strictSecurityProof,
     baseAttestation,
     steps,
     summary,
+    claims,
     recommendations,
   });
 
@@ -823,7 +1014,7 @@ async function main(): Promise<void> {
     `${JSON.stringify({ artifactPath, markdownSummaryPath, summary, recommendations }, null, 2)}\n`,
   );
 
-  if (summary.failed > 0) {
+  if (summary.failed > 0 || (config.strictSecurityProof && missingRequiredClaims.length > 0)) {
     process.exitCode = 1;
   }
   } finally {

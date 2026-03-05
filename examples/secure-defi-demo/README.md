@@ -73,6 +73,25 @@ DEMO_BASE_ATTESTATION_PATH=./artifacts/base-attestation-demo.json \
 pnpm --filter @starknet-agentic/secure-defi-demo run:execute
 ```
 
+Strict security proof profile (issue #315):
+
+```bash
+STRICT_SECURITY_PROOF=1 \
+DEMO_AUTO_REGISTER_AGENT=1 \
+DEMO_ANCHOR_BASE_TO_ERC8004=1 \
+STARKNET_SIGNER_MODE=proxy \
+DEMO_SESSION_ACCOUNT_ADDRESS=0x... \
+DEMO_SESSION_KEY_PUBLIC_KEY=0x... \
+pnpm --filter @starknet-agentic/secure-defi-demo run:execute
+```
+
+Optional Starkzap claim input:
+
+```bash
+DEMO_ENABLE_STARKZAP_PROOF=1 \
+DEMO_STARKZAP_EVIDENCE_PATH=../starkzap-onboard-transfer/demo-evidence.json
+```
+
 ## Output
 
 Artifacts are written to `DEMO_OUTPUT_DIR` (default `./artifacts`).
@@ -82,6 +101,7 @@ Each run returns:
 - JSON artifact path + markdown summary path
 - run id
 - per-step status (`ok`, `failed`, `skipped`)
+- deterministic `claims[]` map (`proof_status`, `tx_hash`, `evidence_path`)
 - rejection probe evidence
 - Vesu before/after position snapshots (when executed)
 - recommendations for missing requirements

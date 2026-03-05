@@ -124,6 +124,9 @@ export function loadRunConfig(args: CliArgs): RunConfig {
     sessionAccountAddress: optionalEnv("DEMO_SESSION_ACCOUNT_ADDRESS"),
     sessionKeyPublicKey: optionalEnv("DEMO_SESSION_KEY_PUBLIC_KEY"),
     expiredSessionProbeAmount: optionalEnv("DEMO_EXPIRED_SESSION_PROBE_AMOUNT") ?? "0.000001",
+    strictSecurityProof: optionalBoolEnv("STRICT_SECURITY_PROOF", false),
+    starkzapProofEnabled: optionalBoolEnv("DEMO_ENABLE_STARKZAP_PROOF", false),
+    starkzapEvidencePath: optionalEnv("DEMO_STARKZAP_EVIDENCE_PATH"),
     outputDir: args.outputDir ?? optionalEnv("DEMO_OUTPUT_DIR") ?? path.resolve(getDemoRootDir(), "artifacts"),
   });
 

@@ -7,6 +7,24 @@ const DecimalAmountSchema = z
   .string()
   .regex(/^(0|[1-9]\d*)(\.\d+)?$/, "Must be a non-negative decimal amount");
 
+export const SecurityClaimIdSchema = z.enum([
+  "oversized_spend_denied",
+  "forbidden_selector_denied",
+  "revoked_or_expired_session_blocked",
+  "erc8004_identity_path",
+  "base_to_starknet_anchor_verified",
+  "starkzap_execution_receipt",
+]);
+export const SecurityClaimStatusSchema = z.enum(["proved", "missing", "not_applicable"]);
+export const SecurityClaimSchema = z.object({
+  claimId: SecurityClaimIdSchema,
+  proof_status: SecurityClaimStatusSchema,
+  required: z.boolean(),
+  tx_hash: z.string().regex(/^0x[0-9a-fA-F]+$/).nullable(),
+  evidence_path: z.string().min(1),
+  note: z.string().min(1).optional(),
+});
+
 export const StepStatusSchema = z.enum(["ok", "failed", "skipped"]);
 
 export const StepResultSchema = z.object({
@@ -20,6 +38,7 @@ export const StepResultSchema = z.object({
 });
 
 export type StepResult = z.infer<typeof StepResultSchema>;
+export type SecurityClaim = z.infer<typeof SecurityClaimSchema>;
 
 export const RunConfigSchema = z
   .object({
@@ -48,6 +67,9 @@ export const RunConfigSchema = z
     sessionAccountAddress: StarknetAddressSchema.optional(),
     sessionKeyPublicKey: StarknetAddressSchema.optional(),
     expiredSessionProbeAmount: DecimalAmountSchema,
+    strictSecurityProof: z.boolean().default(false),
+    starkzapProofEnabled: z.boolean().default(false),
+    starkzapEvidencePath: z.string().min(1).optional(),
     outputDir: z.string().min(1),
   })
   .superRefine((cfg, ctx) => {
@@ -68,6 +90,22 @@ export const RunConfigSchema = z
         code: "custom",
         path: hasSessionAccountAddress ? ["sessionKeyPublicKey"] : ["sessionAccountAddress"],
         message: "sessionAccountAddress and sessionKeyPublicKey must be provided together",
+      });
+    }
+
+    if (cfg.strictSecurityProof && cfg.mode !== "execute") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["mode"],
+        message: "STRICT_SECURITY_PROOF requires --mode execute",
+      });
+    }
+
+    if (cfg.starkzapProofEnabled && !cfg.starkzapEvidencePath) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["starkzapEvidencePath"],
+        message: "DEMO_STARKZAP_EVIDENCE_PATH is required when DEMO_ENABLE_STARKZAP_PROOF=1",
       });
     }
   });
@@ -97,6 +135,7 @@ export const DemoArtifactSchema = z.object({
   endedAt: z.string().datetime(),
   accountAddress: StarknetAddressSchema,
   signerMode: z.enum(["direct", "proxy"]),
+  strictSecurityProof: z.boolean().default(false),
   baseAttestation: z
     .object({
       path: z.string().min(1),
@@ -118,6 +157,7 @@ export const DemoArtifactSchema = z.object({
     failed: z.number().int().nonnegative(),
     skipped: z.number().int().nonnegative(),
   }),
+  claims: z.array(SecurityClaimSchema).default([]),
   recommendations: z.array(z.string()),
 });
 

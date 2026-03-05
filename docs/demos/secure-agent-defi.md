@@ -47,6 +47,7 @@ The output artifact is validated by zod schema:
 - run metadata (`runId`, timestamps, mode, account)
 - optional signed base attestation verification record
 - step-by-step status + details
+- deterministic security claim map (`claims[]` with `proof_status`, `tx_hash`, `evidence_path`)
 - summary counts
 - recommendations
 - markdown companion summary file (`secure-defi-demo-<runId>.md`)
@@ -79,6 +80,9 @@ Before execute mode:
 7. Optional session evidence:
    - `DEMO_SESSION_ACCOUNT_ADDRESS`
    - `DEMO_SESSION_KEY_PUBLIC_KEY`
+8. Optional strict proof gate:
+   - `STRICT_SECURITY_PROOF=1`
+   - optional `DEMO_ENABLE_STARKZAP_PROOF=1` + `DEMO_STARKZAP_EVIDENCE_PATH=<path>`
 
 ## Acceptance for v1
 
@@ -87,6 +91,7 @@ Before execute mode:
 - Forbidden selector probe returns blocked-entrypoint denial.
 - Execute mode produces transfer transaction evidence; Vesu deposit evidence is required when Vesu pool contracts are available (otherwise Vesu steps are explicitly skipped).
 - Artifacts are generated and stored for audit trail.
+- Strict profile fails unless required claims are all `proved` in `artifact.claims`.
 
 ## Next v2 Extensions
 

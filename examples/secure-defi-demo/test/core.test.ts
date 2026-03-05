@@ -114,3 +114,33 @@ test("loadRunConfig requires proxy credentials in proxy mode", () => {
   const args = parseCliArgs();
   assert.throws(() => loadRunConfig(args), /Missing required env var: KEYRING_PROXY_URL/);
 });
+
+test("loadRunConfig enforces execute mode for strict security proof", () => {
+  process.argv = ["node", "run.ts", "--mode", "dry-run"];
+  process.env.STARKNET_SIGNER_MODE = "direct";
+  process.env.STARKNET_RPC_URL = "https://starknet-sepolia-rpc.publicnode.com";
+  process.env.STARKNET_ACCOUNT_ADDRESS = "0x123";
+  process.env.STARKNET_PRIVATE_KEY = "0xabc";
+  process.env.DEMO_MCP_ENTRY = path.resolve("README.md");
+  process.env.STRICT_SECURITY_PROOF = "1";
+
+  const args = parseCliArgs();
+  assert.throws(() => loadRunConfig(args), /STRICT_SECURITY_PROOF requires --mode execute/);
+});
+
+test("loadRunConfig requires Starkzap evidence path when Starkzap proof is enabled", () => {
+  process.argv = ["node", "run.ts", "--mode", "execute"];
+  process.env.STARKNET_SIGNER_MODE = "direct";
+  process.env.STARKNET_RPC_URL = "https://starknet-sepolia-rpc.publicnode.com";
+  process.env.STARKNET_ACCOUNT_ADDRESS = "0x123";
+  process.env.STARKNET_PRIVATE_KEY = "0xabc";
+  process.env.DEMO_MCP_ENTRY = path.resolve("README.md");
+  process.env.DEMO_ENABLE_STARKZAP_PROOF = "1";
+  delete process.env.DEMO_STARKZAP_EVIDENCE_PATH;
+
+  const args = parseCliArgs();
+  assert.throws(
+    () => loadRunConfig(args),
+    /DEMO_STARKZAP_EVIDENCE_PATH is required when DEMO_ENABLE_STARKZAP_PROOF=1/,
+  );
+});
