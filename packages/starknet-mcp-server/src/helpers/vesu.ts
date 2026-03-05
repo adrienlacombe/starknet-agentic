@@ -7,7 +7,7 @@
 import { CallData, cairo, type Call } from "starknet";
 import { validateAndParseAddress } from "starknet";
 
-/** Vesu V2 PoolFactory — mainnet */
+/** Vesu V2 PoolFactory — mainnet default (overridable via env in server runtime) */
 export const VESU_POOL_FACTORY =
   "0x03760f903a37948f97302736f89ce30290e45f441559325026842b7a6fb388c0";
 
@@ -29,13 +29,15 @@ export interface RpcProviderLike {
 export async function getVTokenAddress(
   provider: RpcProviderLike,
   poolAddress: string,
-  assetAddress: string
+  assetAddress: string,
+  poolFactoryAddress: string = VESU_POOL_FACTORY
 ): Promise<string> {
   const parsedPool = validateAndParseAddress(poolAddress);
   const parsedAsset = validateAndParseAddress(assetAddress);
+  const parsedPoolFactory = validateAndParseAddress(poolFactoryAddress);
 
   const raw = await provider.callContract({
-    contractAddress: VESU_POOL_FACTORY,
+    contractAddress: parsedPoolFactory,
     entrypoint: "v_token_for_asset",
     calldata: [parsedPool, parsedAsset],
   });

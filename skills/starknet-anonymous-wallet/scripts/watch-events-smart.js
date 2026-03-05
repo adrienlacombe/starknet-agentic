@@ -26,26 +26,27 @@
 import { RpcProvider, hash } from 'starknet';
 import { WebSocket } from 'ws';
 import { execSync, execFileSync } from 'child_process';
-import { writeFileSync, mkdirSync, existsSync, readFileSync, unlinkSync, readdirSync } from 'fs';
+import { writeFileSync, mkdirSync, existsSync, readFileSync, unlinkSync, readdirSync, lstatSync, realpathSync } from 'fs';
 import { tmpdir, homedir } from 'os';
 import { join, basename } from 'path';
+import { fileURLToPath } from 'url';
 
 import { resolveRpcUrl } from './_rpc.js';
 
 const DEFAULT_POLL_INTERVAL = 3000;
 const DEFAULT_HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
 const DEFAULT_WEBHOOK_TIMEOUT_MS = 5000;
+const DEFAULT_POLL_START_RETRY_MS = 5000;
 const MAX_BLOCKS_PER_CYCLE = 200;
 const DEFAULT_WS_RECOVERY_COOLDOWN_MS = 5 * 60 * 1000;
+const MAX_PROCESSED_TXS = 10000;
+const PROCESSED_TXS_TRIM_TO = 9000;
 
-let currentMode = 'initializing'; // 'websocket', 'polling', 'initializing'
-let isShuttingDown = false;
-
-function log(message, type = 'info') {
+function log(message, type = 'info', mode = 'initializing') {
   console.log(JSON.stringify({
     timestamp: new Date().toISOString(),
     type,
-    mode: currentMode,
+    mode,
     message
   }));
 }
@@ -99,12 +100,12 @@ function createCronJob(config) {
   
   writeFileSync(configPath, JSON.stringify(execConfig, null, 2));
 
-  const scriptPath = new URL(import.meta.url).pathname;
-  const shellQuote = (value) => `'${String(value).replace(/'/g, `'"'"'`)}'`;
-
+  const scriptPath = fileURLToPath(import.meta.url);
+  
   const shellScript = `#!/bin/bash
 cd "$(dirname "$0")"
-exec node ${shellQuote(scriptPath)} ${shellQuote(`@${configPath}`)}
+LOCKFILE="${configPath}.lock"
+exec flock -n "$LOCKFILE" node "${scriptPath}" '@${configPath}'
 `;
   const shellPath = join(cronDir, `${jobName}.sh`);
   writeFileSync(shellPath, shellScript, { mode: 0o755 });
@@ -148,17 +149,23 @@ exec node ${shellQuote(scriptPath)} ${shellQuote(`@${configPath}`)}
 class SmartEventWatcher {
   constructor(config) {
     this.config = config;
+    this.forcedMode = config.mode || 'auto'; // 'auto', 'websocket', 'polling'
     const rpcUrl = config.httpRpcUrl || resolveRpcUrl();
     this.httpUrl = rpcUrl;
-    // Derive WebSocket URL from HTTP URL if not explicitly provided
-    this.wsUrl = config.wsRpcUrl || this.httpUrl.replace(/^https?:\/\//, (m) => m.startsWith('https') ? 'wss://' : 'ws://').replace(/\/?$/, '/ws');
+    // Require explicit wsRpcUrl. Not all providers expose WebSocket endpoints.
+    this.wsUrl = config.wsRpcUrl || null;
+    if (!this.wsUrl && this.forcedMode !== 'polling') {
+      this.log('wsRpcUrl not set; WebSocket mode unavailable, using polling fallback', 'warn');
+    }
     this.pollIntervalMs = config.pollIntervalMs || DEFAULT_POLL_INTERVAL;
+    this.pollStartRetryMs = config.pollStartRetryMs || DEFAULT_POLL_START_RETRY_MS;
     this.healthCheckIntervalMs = config.healthCheckIntervalMs || DEFAULT_HEALTH_CHECK_INTERVAL;
     this.webhookTimeoutMs = config.webhookTimeoutMs || DEFAULT_WEBHOOK_TIMEOUT_MS;
     this.webhookUrl = config.webhookUrl || null;
     this.contractAddress = config.contractAddress;
     this.eventNames = config.eventNames || [];
-    this.forcedMode = config.mode || 'auto'; // 'auto', 'websocket', 'polling'
+    this.currentMode = 'initializing'; // 'websocket', 'polling', 'initializing'
+    this.isShuttingDown = false;
     
     // WebSocket state
     this.ws = null;
@@ -188,14 +195,18 @@ class SmartEventWatcher {
     this.lastLoggedMinute = null;
   }
 
+  log(message, type = 'info') {
+    log(message, type, this.currentMode);
+  }
+
   async start() {
-    log('Starting smart event watcher...');
-    log(`Contract: ${this.contractAddress}`);
-    log(`Events: ${this.eventNames.join(', ')}`);
-    log(`Mode preference: ${this.forcedMode}`);
+    this.log('Starting smart event watcher...');
+    this.log(`Contract: ${this.contractAddress}`);
+    this.log(`Events: ${this.eventNames.join(', ')}`);
+    this.log(`Mode preference: ${this.forcedMode}`);
     
     if (this.durationMs) {
-      log(`Duration: ${this.durationMs}ms (${this.durationMs / 1000 / 60} minutes)`);
+      this.log(`Duration: ${this.durationMs}ms (${this.durationMs / 1000 / 60} minutes)`);
       this.startTTLCheck();
     }
 
@@ -219,13 +230,13 @@ class SmartEventWatcher {
       const remaining = this.durationMs - elapsed;
       
       if (remaining <= 0) {
-        log(`TTL expired after ${this.durationMs}ms. Self-destructing...`, 'info');
+        this.log(`TTL expired after ${this.durationMs}ms. Self-destructing...`, 'info');
         this.selfDestruct();
       } else {
         const currentMinute = Math.ceil(remaining / 1000 / 60);
         if (currentMinute !== this.lastLoggedMinute) {
           this.lastLoggedMinute = currentMinute;
-          log(`TTL: ${currentMinute} minutes remaining`, 'info');
+          this.log(`TTL: ${currentMinute} minutes remaining`, 'info');
         }
       }
     }, 1000); // Check every second
@@ -233,7 +244,7 @@ class SmartEventWatcher {
   
   // Self-destruct: stop watching and remove cron job
   async selfDestruct() {
-    log('Executing self-destruct sequence...', 'info');
+    this.log('Executing self-destruct sequence...', 'info');
     
     // Stop all timers
     if (this.ttlTimer) {
@@ -268,22 +279,58 @@ class SmartEventWatcher {
         const tmpCrontab = join(tmpdir(), `crontab-${process.pid}.tmp`);
         writeFileSync(tmpCrontab, newCrontab);
         execFileSync('crontab', [tmpCrontab]);
-        try { unlinkSync(tmpCrontab); } catch (e) { log(`Failed to remove temp crontab (${tmpCrontab}): ${e}`, 'warn'); }
+        try { unlinkSync(tmpCrontab); } catch (e) { this.log(`Failed to remove temp crontab (${tmpCrontab}): ${e}`, 'warn'); }
 
         // Delete files
-        try { unlinkSync(shellPath); } catch (e) { log(`Failed to remove shellPath (${shellPath}): ${e}`, 'warn'); }
-        try { unlinkSync(configPath); } catch (e) { log(`Failed to remove configPath (${configPath}): ${e}`, 'warn'); }
+        try { unlinkSync(shellPath); } catch (e) { this.log(`Failed to remove shellPath (${shellPath}): ${e}`, 'warn'); }
+        try { unlinkSync(configPath); } catch (e) { this.log(`Failed to remove configPath (${configPath}): ${e}`, 'warn'); }
 
-        log(`Removed cron job: ${jobName}`, 'info');
+        this.log(`Removed cron job: ${jobName}`, 'info');
         removed = true;
       }
 
       // Fallback: scan cron dir for a shell script that references our config path
       if (!removed && knownConfigPath) {
+        const cronDirReal = realpathSync(cronDir);
+        const knownConfigBase = basename(knownConfigPath);
+        let knownConfigReal = null;
+        try {
+          knownConfigReal = realpathSync(knownConfigPath);
+        } catch {}
+
         const files = readdirSync(cronDir);
         for (const file of files) {
           if (!file.endsWith('.sh')) continue;
           const shellPath = join(cronDir, file);
+          let shellStat = null;
+          try {
+            shellStat = lstatSync(shellPath);
+          } catch {
+            continue;
+          }
+          if (!shellStat.isFile() || shellStat.isSymbolicLink()) continue;
+          if (typeof process.getuid === 'function' && shellStat.uid !== process.getuid()) continue;
+
+          let shellReal = null;
+          try {
+            shellReal = realpathSync(shellPath);
+          } catch {
+            continue;
+          }
+          if (!(shellReal === cronDirReal || shellReal.startsWith(`${cronDirReal}/`))) continue;
+
+          const derivedConfigPath = shellPath.replace(/\.sh$/i, '.json');
+          let configMatch = false;
+          try {
+            const derivedConfigReal = realpathSync(derivedConfigPath);
+            configMatch = knownConfigReal
+              ? derivedConfigReal === knownConfigReal
+              : basename(derivedConfigReal) === knownConfigBase;
+          } catch {
+            configMatch = !knownConfigReal && basename(derivedConfigPath) === knownConfigBase;
+          }
+          if (!configMatch) continue;
+
           const content = readFileSync(shellPath, 'utf8');
           if (content.includes(knownConfigPath)) {
             const currentCrontab = execSync('crontab -l 2>/dev/null || echo ""').toString();
@@ -292,13 +339,12 @@ class SmartEventWatcher {
             const tmpCrontab = join(tmpdir(), `crontab-${process.pid}-2.tmp`);
             writeFileSync(tmpCrontab, newCrontab);
             execFileSync('crontab', [tmpCrontab]);
-            try { unlinkSync(tmpCrontab); } catch (e) { log(`Failed to remove temp crontab (${tmpCrontab}): ${e}`, 'warn'); }
+            try { unlinkSync(tmpCrontab); } catch (e) { this.log(`Failed to remove temp crontab (${tmpCrontab}): ${e}`, 'warn'); }
 
-            try { unlinkSync(shellPath); } catch (e) { log(`Failed to remove shellPath (${shellPath}): ${e}`, 'warn'); }
-            const derivedConfigPath = shellPath.replace(/\.sh$/i, '.json');
-            try { unlinkSync(derivedConfigPath); } catch (e) { log(`Failed to remove configPath (${derivedConfigPath}): ${e}`, 'warn'); }
+            try { unlinkSync(shellPath); } catch (e) { this.log(`Failed to remove shellPath (${shellPath}): ${e}`, 'warn'); }
+            try { unlinkSync(derivedConfigPath); } catch (e) { this.log(`Failed to remove configPath (${derivedConfigPath}): ${e}`, 'warn'); }
 
-            log(`Removed cron job: ${file}`, 'info');
+            this.log(`Removed cron job: ${file}`, 'info');
             removed = true;
             break;
           }
@@ -306,22 +352,29 @@ class SmartEventWatcher {
       }
 
       if (!removed) {
-        log('No cron job found to remove (may have been manual run)', 'warn');
+        this.log('No cron job found to remove (may have been manual run)', 'warn');
       }
     } catch (err) {
-      log(`Error during self-destruct cleanup: ${err.message}`, 'error');
+      this.log(`Error during self-destruct cleanup: ${err.message}`, 'error');
     }
     
-    log('Self-destruct complete. Exiting.', 'info');
+    this.log('Self-destruct complete. Exiting.', 'info');
     process.exit(0);
   }
 
   // Try to connect via WebSocket
   async tryWebSocket() {
-    if (isShuttingDown) return;
+    if (this.isShuttingDown) return;
+    if (!this.wsUrl) {
+      if (this.forcedMode === 'websocket') {
+        this.log('wsRpcUrl is required when mode=websocket', 'error');
+        process.exit(1);
+      }
+      await this.startPolling();
+      return false;
+    }
     
-    currentMode = 'websocket';
-    log('Attempting WebSocket connection...');
+    this.log('Attempting WebSocket connection...');
 
     return new Promise((resolve) => {
       let connected = false;
@@ -330,7 +383,7 @@ class SmartEventWatcher {
       
       const connectionTimeout = setTimeout(() => {
         if (!connected) {
-          log('WebSocket connection timeout', 'warn');
+          this.log('WebSocket connection timeout', 'warn');
           this.ws.close();
           this.handleWebSocketFailure('timeout');
           resolve(false);
@@ -340,23 +393,36 @@ class SmartEventWatcher {
       this.ws.on('open', () => {
         connected = true;
         clearTimeout(connectionTimeout);
+        this.currentMode = 'websocket';
         this.wsIsConnected = true;
         this.wsReconnectAttempts = 0;
-        log('WebSocket connected successfully');
+        this.log('WebSocket connected successfully');
         
         // Subscribe to events
-        for (const eventName of this.eventNames) {
-          const eventSelector = hash.getSelectorFromName(eventName);
+        if (this.eventNames.length === 0) {
           const subscribeMsg = {
             jsonrpc: '2.0',
             method: 'starknet_subscribeEvents',
             params: {
-              address: this.contractAddress,
-              keys: [[eventSelector]]
+              address: this.contractAddress
             },
             id: ++this.jsonRpcId
           };
           this.ws.send(JSON.stringify(subscribeMsg));
+        } else {
+          for (const eventName of this.eventNames) {
+            const eventSelector = hash.getSelectorFromName(eventName);
+            const subscribeMsg = {
+              jsonrpc: '2.0',
+              method: 'starknet_subscribeEvents',
+              params: {
+                address: this.contractAddress,
+                keys: [[eventSelector]]
+              },
+              id: ++this.jsonRpcId
+            };
+            this.ws.send(JSON.stringify(subscribeMsg));
+          }
         }
         
         resolve(true);
@@ -368,7 +434,7 @@ class SmartEventWatcher {
           
           // Handle subscription confirmation
           if (msg.result !== undefined && typeof msg.result === 'number') {
-            log(`Subscribed with ID: ${msg.result}`);
+            this.log(`Subscribed with ID: ${msg.result}`);
             return;
           }
           
@@ -376,7 +442,7 @@ class SmartEventWatcher {
           if (msg.error || msg.Error_Received) {
             const errorStr = JSON.stringify(msg.error || msg.Error_Received).toLowerCase();
             if (errorStr.includes('unsupported') || errorStr.includes('not found')) {
-              log('WebSocket: Subscriptions not supported by provider', 'warn');
+              this.log('WebSocket: Subscriptions not supported by provider', 'warn');
               this.handleWebSocketFailure('unsupported');
               resolve(false);
               return;
@@ -389,14 +455,16 @@ class SmartEventWatcher {
             this.handleEvent(msg.params.result, 'websocket');
           }
         } catch (e) {
-          // Ignore parse errors
+          const raw = Buffer.isBuffer(data) ? data.toString('utf8') : String(data);
+          const rawPreview = raw.length > 320 ? `${raw.slice(0, 320)}...` : raw;
+          this.log(`WebSocket message parse error: ${e.message}; payload=${rawPreview}`, 'debug');
         }
       });
 
       this.ws.on('error', (err) => {
         if (!connected) {
           clearTimeout(connectionTimeout);
-          log(`WebSocket error: ${err.message}`, 'error');
+          this.log(`WebSocket error: ${err.message}`, 'error');
           this.handleWebSocketFailure('error');
           resolve(false);
         }
@@ -404,8 +472,8 @@ class SmartEventWatcher {
 
       this.ws.on('close', () => {
         this.wsIsConnected = false;
-        if (currentMode === 'websocket' && !isShuttingDown) {
-          log('WebSocket disconnected unexpectedly', 'warn');
+        if (this.currentMode === 'websocket' && !this.isShuttingDown) {
+          this.log('WebSocket disconnected unexpectedly', 'warn');
           this.handleWebSocketFailure('disconnected');
         }
       });
@@ -421,17 +489,21 @@ class SmartEventWatcher {
       // In forced WebSocket mode, keep retrying
       if (this.wsReconnectAttempts < this.maxWsReconnectAttempts) {
         const delay = Math.min(30000, 2000 * Math.pow(2, this.wsReconnectAttempts));
-        log(`WebSocket retry ${this.wsReconnectAttempts}/${this.maxWsReconnectAttempts} in ${delay}ms...`);
+        this.log(`WebSocket retry ${this.wsReconnectAttempts}/${this.maxWsReconnectAttempts} in ${delay}ms...`);
         setTimeout(() => this.tryWebSocket(), delay);
       } else {
-        log('Max WebSocket reconnection attempts reached', 'error');
+        this.log('Max WebSocket reconnection attempts reached', 'error');
         process.exit(1);
       }
     } else {
       // In auto mode, fallback to polling
-      log(`WebSocket failed (${reason}), switching to polling mode`);
+      this.log(`WebSocket failed (${reason}), switching to polling mode`);
       this.stopWebSocket();
-      this.startPolling();
+      if (this.isPolling) {
+        this.currentMode = 'polling';
+      } else {
+        this.startPolling();
+      }
     }
   }
 
@@ -445,22 +517,28 @@ class SmartEventWatcher {
 
   // Start HTTP polling
   async startPolling() {
-    if (isShuttingDown) return;
+    if (this.isShuttingDown) return;
     if (this.isPolling) return;
     
-    currentMode = 'polling';
+    this.currentMode = 'polling';
     this.isPolling = true;
-    log('Starting HTTP polling mode...');
-    log(`Poll interval: ${this.pollIntervalMs}ms`);
+    this.log('Starting HTTP polling mode...');
+    this.log(`Poll interval: ${this.pollIntervalMs}ms`);
 
     // Get starting block
     try {
       const block = await this.provider.getBlock('latest');
       this.currentBlock = block.block_number;
-      log(`Starting from block ${this.currentBlock}`);
+      this.log(`Starting from block ${this.currentBlock}`);
     } catch (err) {
-      log(`Failed to get starting block: ${err.message}`, 'error');
-      this.currentBlock = 0;
+      this.log(`Failed to get starting block: ${err.message}`, 'error');
+      this.isPolling = false;
+      this.pollTimer = setTimeout(() => {
+        if (this.isShuttingDown || this.isPolling) return;
+        this.startPolling();
+      }, this.pollStartRetryMs);
+      this.log(`Retrying polling startup in ${this.pollStartRetryMs}ms`, 'warn');
+      return;
     }
 
     this.poll();
@@ -475,7 +553,7 @@ class SmartEventWatcher {
   }
 
   async poll() {
-    if (!this.isPolling || isShuttingDown) return;
+    if (!this.isPolling || this.isShuttingDown) return;
     
     try {
       const latestBlock = await this.provider.getBlock('latest');
@@ -488,11 +566,11 @@ class SmartEventWatcher {
         }
         this.currentBlock = endBlock;
         if (latestNumber > endBlock) {
-          log(`Polling backlog: processed to block ${endBlock}, latest is ${latestNumber}`);
+          this.log(`Polling backlog: processed to block ${endBlock}, latest is ${latestNumber}`);
         }
       }
     } catch (err) {
-      log(`Poll error: ${err.message}`, 'error');
+      this.log(`Poll error: ${err.message}`, 'error');
     }
     
     this.pollTimer = setTimeout(() => this.poll(), this.pollIntervalMs);
@@ -503,32 +581,43 @@ class SmartEventWatcher {
       const keys = this.eventNames.length > 0 
         ? this.eventNames.map(name => hash.getSelectorFromName(name))
         : undefined;
-      
-      const events = await this.provider.getEvents({
-        fromBlock: { block_number: blockNumber },
-        toBlock: { block_number: blockNumber },
-        address: this.contractAddress,
-        keys: keys ? [keys] : undefined,
-        chunk_size: 100
-      });
-      
-      for (const event of events.events || []) {
-        this.handleEvent(event, 'polling');
-      }
+
+      let continuationToken = undefined;
+      do {
+        const page = await this.provider.getEvents({
+          fromBlock: { block_number: blockNumber },
+          toBlock: { block_number: blockNumber },
+          address: this.contractAddress,
+          keys: keys ? [keys] : undefined,
+          chunk_size: 100,
+          continuation_token: continuationToken
+        });
+
+        for (const event of page.events || []) {
+          this.handleEvent(event, 'polling');
+        }
+
+        continuationToken = page.continuation_token;
+      } while (continuationToken);
     } catch (err) {
-      log(`Block ${blockNumber} error: ${err.message}`, 'error');
+      this.log(`Block ${blockNumber} error: ${err.message}`, 'error');
     }
   }
 
   // Handle events from either source
   handleEvent(event, source) {
-    const txKey = `${event.transaction_hash || event.transactionHash}_${event.keys.join('_')}`;
+    const keys = Array.isArray(event?.keys) ? event.keys : [];
+    const txKey = `${event.transaction_hash || event.transactionHash}_${keys.join('_')}`;
     if (this.processedTxs.has(txKey)) return;
     this.processedTxs.add(txKey);
     
-    if (this.processedTxs.size > 10000) {
+    if (this.processedTxs.size > MAX_PROCESSED_TXS) {
       const iter = this.processedTxs.values();
-      this.processedTxs.delete(iter.next().value);
+      while (this.processedTxs.size > PROCESSED_TXS_TRIM_TO) {
+        const next = iter.next();
+        if (next.done) break;
+        this.processedTxs.delete(next.value);
+      }
     }
 
     const eventData = {
@@ -538,15 +627,15 @@ class SmartEventWatcher {
       blockNumber: event.block_number || event.blockNumber,
       transactionHash: event.transaction_hash || event.transactionHash,
       contractAddress: event.from_address || event.contractAddress,
-      keys: event.keys,
+      keys,
       data: event.data,
-      eventName: this.getEventName(event.keys[0])
+      eventName: this.getEventName(keys[0])
     };
     
     logEvent(eventData);
     
     if (this.webhookUrl) {
-      sendWebhook(this.webhookUrl, eventData, this.webhookTimeoutMs);
+      sendWebhook(this.webhookUrl, eventData, this.webhookTimeoutMs).catch(() => {});
     }
   }
 
@@ -560,18 +649,19 @@ class SmartEventWatcher {
   // Health check - monitor both modes and recover if needed
   startHealthCheck() {
     this.healthCheckTimer = setInterval(() => {
-      if (isShuttingDown) return;
+      if (this.isShuttingDown) return;
       
-      if (currentMode === 'websocket') {
+      if (this.currentMode === 'websocket') {
         // Check if WebSocket is still healthy
         if (!this.wsIsConnected) {
-          log('Health check: WebSocket not connected', 'warn');
+          this.log('Health check: WebSocket not connected', 'warn');
           this.handleWebSocketFailure('health_check');
         }
         // Could also check last event time and fallback if no events for too long
-      } else if (currentMode === 'polling') {
+      } else if (this.currentMode === 'polling') {
         // In auto mode, periodically try to recover WebSocket
         if (this.forcedMode !== 'auto') return;
+        if (!this.wsUrl) return;
 
         if (this.lastWsFailureTime && (Date.now() - this.lastWsFailureTime) >= this.wsRecoveryCooldownMs) {
           this.wsReconnectAttempts = 0;
@@ -582,13 +672,10 @@ class SmartEventWatcher {
           return;
         }
 
-        log('Health check: Attempting WebSocket recovery...');
-        this.wsReconnectAttempts = 0;
-        this.stopPolling();
+        this.log('Health check: Attempting WebSocket recovery...');
         this.tryWebSocket().then(success => {
-          if (!success) {
-            // Recovery failed, continue polling
-            this.startPolling();
+          if (success) {
+            this.stopPolling();
           }
         });
       }
@@ -596,8 +683,8 @@ class SmartEventWatcher {
   }
 
   stop() {
-    isShuttingDown = true;
-    log('Shutting down...');
+    this.isShuttingDown = true;
+    this.log('Shutting down...');
     
     if (this.healthCheckTimer) {
       clearInterval(this.healthCheckTimer);
@@ -628,7 +715,14 @@ async function main() {
     rawInput = readFileSync(configPath, 'utf8');
   }
   
-  const config = JSON.parse(rawInput);
+  let config;
+  try {
+    config = JSON.parse(rawInput);
+  } catch (err) {
+    const source = configPath ? `config file ${configPath}` : 'input argument';
+    console.error(JSON.stringify({ error: `Invalid JSON in ${source}: ${err.message}` }));
+    process.exit(1);
+  }
   // Remember config path/job name when started from cron
   if (configPath) {
     config.__configPath = configPath;

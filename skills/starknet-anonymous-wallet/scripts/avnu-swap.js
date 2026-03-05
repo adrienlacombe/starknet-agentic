@@ -12,27 +12,13 @@
 import { getQuotes, executeSwap } from '@avnu/avnu-sdk';
 import { RpcProvider, Account, PaymasterRpc } from 'starknet';
 import { fileURLToPath } from 'url';
-import { existsSync, readdirSync, readFileSync } from 'fs';
-import { join, isAbsolute } from 'path';
-import { homedir } from 'os';
 import { resolveRpcUrl } from './_rpc.js';
 import { fetchVerifiedTokens } from './_tokens.js';
+import { parseAmountToBaseUnits } from './parse-utils.js';
 
 
 
 const DEFAULT_SLIPPAGE = 0.001; // 0.1%
-
-function amountToBigInt(amount, decimals) {
-  const dec = Number(decimals ?? 18);
-  if (!Number.isInteger(dec) || dec < 0) throw new Error('Invalid decimals');
-  const s = String(amount).trim();
-  if (!/^\d+(?:\.\d+)?$/.test(s)) throw new Error(`Invalid amount format: ${amount}`);
-  const [i, f = ''] = s.split('.');
-  if (f.length > dec) throw new Error(`Too many decimal places: ${f.length} > ${dec}`);
-  const frac = (f + '0'.repeat(dec)).slice(0, dec);
-  const digits = `${i}${frac}`.replace(/^0+(?=\d)/, '');
-  return BigInt(digits || '0');
-}
 
 /**
  * Fetch all verified tokens from AVNU
@@ -46,13 +32,16 @@ async function getAllTokens() {
  */
 async function matchTokens(sellSymbol, buySymbol) {
   const tokens = await getAllTokens();
+  const safeTokens = tokens.filter((t) => typeof t?.symbol === 'string' && t.symbol.length > 0);
+  const normalizedSell = String(sellSymbol || '').toLowerCase();
+  const normalizedBuy = String(buySymbol || '').toLowerCase();
   
-  const sellToken = tokens.find(t => 
-    t.symbol.toLowerCase() === sellSymbol.toLowerCase()
+  const sellToken = safeTokens.find(t => 
+    String(t?.symbol || '').toLowerCase() === normalizedSell
   );
   
-  const buyToken = tokens.find(t => 
-    t.symbol.toLowerCase() === buySymbol.toLowerCase()
+  const buyToken = safeTokens.find(t => 
+    String(t?.symbol || '').toLowerCase() === normalizedBuy
   );
   
   return { sellToken, buyToken };
@@ -65,14 +54,14 @@ async function getSwapQuote(sellTokenSymbol, buyTokenSymbol, sellAmount, account
   if (!buyToken) throw new Error(`Unknown buy token: ${buyTokenSymbol}`);
   
   // Parse amount with exact decimal conversion
-  const amountBigInt = amountToBigInt(sellAmount, sellToken.decimals);
+  const amountBigInt = parseAmountToBaseUnits(sellAmount, sellToken.decimals);
   
   const quotes = await getQuotes({
     sellTokenAddress: sellToken.address,
     buyTokenAddress: buyToken.address,
     sellAmount: amountBigInt,
     takerAddress: accountAddress,
-    size: 3, // Get top 3 quotes for comparison
+    size: 1,
   });
   
   if (!quotes || quotes.length === 0) {
@@ -82,72 +71,19 @@ async function getSwapQuote(sellTokenSymbol, buyTokenSymbol, sellAmount, account
   return { quote: quotes[0], sellToken, buyToken };
 }
 
-const DEFAULT_PAYMASTER_URL = 'https://starknet.paymaster.avnu.fi';
-const ALLOWED_PAYMASTER_HOSTS = new Set([
-  'starknet.paymaster.avnu.fi',
-  'sepolia.paymaster.avnu.fi'
-]);
+let cachedPaymaster = null;
 
-function resolvePaymasterUrl() {
-  const value = process.env.PAYMASTER_URL || DEFAULT_PAYMASTER_URL;
-  let parsed;
-  try {
-    parsed = new URL(value);
-  } catch {
-    throw new Error(`Invalid PAYMASTER_URL: ${value}`);
-  }
-  if (!ALLOWED_PAYMASTER_HOSTS.has(parsed.hostname)) {
-    throw new Error(`Untrusted paymaster host: ${parsed.hostname}`);
-  }
-  return parsed.toString();
+function getPaymaster() {
+  if (cachedPaymaster) return cachedPaymaster;
+  cachedPaymaster = new PaymasterRpc({
+    nodeUrl: process.env.PAYMASTER_URL || 'https://starknet.paymaster.avnu.fi',
+  });
+  return cachedPaymaster;
 }
-
-function getSecretsDir() {
-  return join(homedir(), '.openclaw', 'secrets', 'starknet');
-}
-
-function loadPrivateKeyByAccountAddress(accountAddress) {
-  const dir = getSecretsDir();
-  if (!existsSync(dir)) throw new Error('Missing secrets directory: ~/.openclaw/secrets/starknet');
-
-  const files = readdirSync(dir).filter(f => f.endsWith('.json'));
-  const target = String(accountAddress).toLowerCase();
-
-  for (const file of files) {
-    const accountPath = join(dir, file);
-    let data;
-    try {
-      data = JSON.parse(readFileSync(accountPath, 'utf8'));
-    } catch {
-      continue;
-    }
-
-    if (String(data.address || '').toLowerCase() !== target) continue;
-
-    if (!(typeof data.privateKeyPath === 'string' && data.privateKeyPath.trim().length > 0)) {
-      throw new Error('Account is missing privateKeyPath (file-based key is required).');
-    }
-
-    const keyPath = isAbsolute(data.privateKeyPath)
-      ? data.privateKeyPath
-      : join(dir, data.privateKeyPath);
-
-    if (!existsSync(keyPath)) throw new Error(`Private key file not found: ${keyPath}`);
-    const privateKey = readFileSync(keyPath, 'utf8').trim();
-    if (!privateKey) throw new Error('Private key file is empty.');
-    return privateKey;
-  }
-
-  throw new Error(`Account not found in ~/.openclaw/secrets/starknet for address: ${accountAddress}`);
-}
-
-const paymaster = new PaymasterRpc({
-  nodeUrl: resolvePaymasterUrl(),
-});
 
 async function executeAvnuSwap(quote, account, slippage = DEFAULT_SLIPPAGE) {
   const result = await executeSwap({
-    paymaster: paymaster,
+    paymaster: getPaymaster(),
     provider: account,
     quote,
     slippage,

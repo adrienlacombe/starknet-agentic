@@ -1,9 +1,17 @@
 {
   "advisories": [
     {
-      "id": "1113371",
-      "package": "minimatch",
-      "reason": "Transitive dev-tooling advisory; no user-controlled glob patterns are processed in production runtime paths.",
+      "id": "1113974",
+      "package": "@hono/node-server",
+      "severity": "high",
+      "reason": "Temporary allowlist while upgrading hono stack to a patched release.",
+      "expiresOn": "2026-04-30"
+    },
+    {
+      "id": "1114006",
+      "package": "hono",
+      "severity": "high",
+      "reason": "Temporary allowlist while upgrading hono stack to a patched release.",
       "expiresOn": "2026-04-30"
     }
   ]

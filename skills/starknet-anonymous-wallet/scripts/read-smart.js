@@ -138,6 +138,24 @@ function serialize(v, decodeStrings = false) {
   return v;
 }
 
+function toRawCalldata(args) {
+  const calldata = [];
+  for (const arg of args) {
+    if (arg === null || arg === undefined) return null;
+    const kind = typeof arg;
+    if (kind === 'string' || kind === 'number' || kind === 'bigint') {
+      calldata.push(String(arg));
+      continue;
+    }
+    if (kind === 'boolean') {
+      calldata.push(arg ? '1' : '0');
+      continue;
+    }
+    return null;
+  }
+  return calldata;
+}
+
 
 function normalizeAbi(rawAbi) {
   if (!rawAbi) return null;
@@ -188,6 +206,10 @@ async function main() {
     console.log(JSON.stringify({ error: "Missing contractAddress" }));
     process.exit(1);
   }
+  if (method !== undefined && typeof method !== 'string') {
+    console.log(JSON.stringify({ error: "method must be a string" }));
+    process.exit(1);
+  }
   
   const rpcUrl = resolveRpcUrl();
   const provider = new RpcProvider({ nodeUrl: rpcUrl });
@@ -213,6 +235,7 @@ async function main() {
     providerOrAccount: provider
   });
   const callArgs = Array.isArray(args) ? args : (args === undefined || args === null ? [] : [args]);
+  const rawCalldata = toRawCalldata(callArgs);
   
   if (functions.length === 0) {
     console.log(JSON.stringify({ error: "No functions found in ABI" }));
@@ -252,27 +275,24 @@ async function main() {
     try {
       result = await contract.call(resolvedMethod, callArgs);
     } catch (typedCallErr) {
-      const hasUnsafeArgs = callArgs.some((v) => v == null || typeof v === 'object' || Array.isArray(v));
-      if (hasUnsafeArgs) {
-        throw typedCallErr;
-      }
-
-      // Fallback to raw RPC call when typed call path fails (e.g. ABI parser quirks)
+      // Fallback to raw RPC call when typed call path fails (e.g. ABI parser quirks).
+      // Only safe for primitive calldata values; never stringify objects into "[object Object]".
+      if (!rawCalldata) throw typedCallErr;
       const r = await provider.callContract({
         contractAddress,
         entrypoint: resolvedMethod,
-        calldata: callArgs.map(String)
+        calldata: rawCalldata
       });
       rawResult = Array.isArray(r) ? r : (r?.result || null);
       result = rawResult;
     }
 
-    if (!rawResult) {
+    if (!rawResult && rawCalldata && isUint256LikeOutput(matchedFunction)) {
       try {
         const r = await provider.callContract({
           contractAddress,
           entrypoint: resolvedMethod,
-          calldata: callArgs.map(String)
+          calldata: rawCalldata
         });
         rawResult = Array.isArray(r) ? r : (r?.result || null);
       } catch {

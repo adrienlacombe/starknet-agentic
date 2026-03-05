@@ -22,11 +22,11 @@ Snapshot as of 2026-02-10:
 | Agent Account contract | `contracts/agent-account` | Active, tested (110 Cairo tests) |
 | ERC-8004 Cairo contracts | `contracts/erc8004-cairo` | Active, tested (131+ unit + 47 E2E tests) |
 | Huginn registry contract | `contracts/huginn-registry` | Active, tested (6 Cairo tests) |
-| MCP package | `packages/starknet-mcp-server` | Active (9 tools, input validation) |
+| MCP package | `packages/starknet-mcp-server` | Active (tool catalog + input validation) |
 | A2A package | `packages/starknet-a2a` | Active |
 | CLI scaffolding | `packages/create-starknet-agent` | Complete (npm publish pending) |
 | Additional packages | `packages/*` | Active/MVP by package |
-| Skills | `skills/*` | 3 complete + 2 template + 1 onboarding |
+| Skills | `skills/*` | Skills marketplace (see Skills At A Glance for current inventory) |
 | Onboarding examples | `examples/onboard-agent`, `crosschain-demo` | Working (with CI smoke tests) |
 | CI/CD | `.github/workflows/` | 11 jobs + daily health check |
 
@@ -76,10 +76,18 @@ Tracking issue: [#78](https://github.com/keep-starknet-strange/starknet-agentic/
 |---|---|---|
 | `starknet-wallet` | Wallet management, session keys, transfers, balances | Complete |
 | `starknet-mini-pay` | P2P payments, invoices, QR flows, Telegram support | Complete |
-| `starknet-anonymous-wallet` | Privacy-focused wallet operations | Complete |
-| `starknet-defi` | DeFi actions (swaps/staking/lending/LP) | Template |
-| `starknet-identity` | ERC-8004 identity/reputation/validation workflows | Template |
+| `starknet-anonymous-wallet` | Privacy-focused wallet creation via Typhoon | Complete |
+| `starkzap-sdk` | End-to-end Starkzap SDK workflows (onboarding, wallets, ERC20, staking, tests) | Complete |
+| `starknet-defi` | DeFi swaps, DCA, staking, lending via avnu | Complete |
+| `starknet-identity` | ERC-8004 on-chain identity and reputation | Complete |
+| `starknet-js` | starknet.js v9.x SDK guide for dApps and contracts | Complete |
 | `huginn-onboard` | Cross-chain onboarding and Huginn registry integration | Complete |
+| `controller-cli` | Cartridge Controller CLI sessions and scoped execution | Complete |
+| `cairo-contracts` | Contract structure, components, OZ v3, storage, events | Complete |
+| `cairo-testing` | snforge test patterns, cheatcodes, fuzzing, fork testing | Complete |
+| `cairo-deploy` | sncast deployment, account setup, network config | Complete |
+| `cairo-optimization` | Gas optimization, BoundedInt patterns, storage packing | Complete |
+| `cairo-security` | Security audit patterns, vulnerabilities, hardening | Complete |
 
 Full definitions and usage are in `skills/*/SKILL.md`.
 
@@ -107,6 +115,7 @@ npx skills add keep-starknet-strange/starknet-agentic/skills/starknet-wallet
 | Hello Agent | Minimal E2E proof of concept | `examples/hello-agent/` |
 | [Onboard Agent](./examples/onboard-agent/) | E2E agent onboarding: deploy account, register identity, first action | `examples/onboard-agent/` |
 | [Full Stack Swarm](./examples/full-stack-swarm/) | SessionAccount + SISNA signer boundary + MCP tools + AVNU gasless + ERC-8004 (5-agent demo) | `examples/full-stack-swarm/` |
+| [Secure DeFi Demo](./examples/secure-defi-demo/) | Base reputation envelope + Starknet security guardrails + Vesu flow artifact | `examples/secure-defi-demo/` |
 | [Crosschain Demo](./examples/crosschain-demo/) | Base Sepolia ↔ Starknet ERC-8004 cross-chain registration flow | `examples/crosschain-demo/` |
 
 The **DeFi Agent** is the flagship example demonstrating how to build production-ready autonomous agents on Starknet. The **Onboard Agent** shows the full lifecycle from account deployment to identity registration with AVNU gasfree support.
@@ -121,13 +130,13 @@ starknet-agentic/
 │   └── huginn-registry/                  # Thought provenance registry
 ├── packages/
 │   ├── create-starknet-agent/            # CLI scaffolding tool
-│   ├── starknet-mcp-server/              # MCP server (9 tools)
+│   ├── starknet-mcp-server/              # MCP server (tool catalog)
 │   ├── starknet-a2a/                     # A2A protocol adapter
 │   ├── starknet-agent-passport/          # Capability metadata client
 │   ├── x402-starknet/                    # X-402 payment protocol
 │   └── prediction-arb-scanner/           # Cross-venue arb detection
-├── skills/                               # 6 skills (3 complete, 2 template, 1 onboarding)
-├── examples/                             # 4 examples + scaffold reference
+├── skills/                               # Skills marketplace (see Skills At A Glance for current inventory)
+├── examples/                             # Example demos and scaffold references
 ├── docs/                                 # Roadmap, spec, getting started, troubleshooting
 └── website/                              # Next.js documentation site
 ```

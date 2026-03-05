@@ -18,10 +18,13 @@ This skill provides **agent-facing scripts** for:
 - Allowance checks with human amounts
 
 ## Quick Reference
-- Deep dives: `references/` (ABI discovery, Typhoon account flow, preflight/fee simulation notes)
-- Account flow examples: `scripts/create-account.js`, `scripts/parse-smart.js`, `scripts/resolve-smart.js`
-- Read/write examples: `scripts/read-smart.js`, `scripts/invoke-contract.js`, `scripts/avnu-swap.js`
-- Allowance checks example: `scripts/read-smart.js` (call ERC20 `allowance(owner, spender)`)
+
+- `parse-smart.js`: parse/sanitize user prompt, detect operation type, return protocol + ABI context.
+- `resolve-smart.js`: build a safe execution plan from parsed LLM output (plan-only; no direct execute mode).
+- `read-smart.js`: dynamically match ABI functions and perform read calls.
+- `invoke-contract.js`: execute a direct contract write call.
+- `avnu-swap.js`: AVNU quote + swap execution flow for DeFi swaps.
+- `vesu-pool.js`: Vesu supply/borrow/position helper mapped to `modify_position`.
 
 ## Prerequisites
 
@@ -31,10 +34,15 @@ npm install starknet@^9.2.1 typhoon-sdk@^1.1.13 @andersmyrmel/vard@^1.2.0 @avnu/
 
 ### RPC setup (required for onchain reads/writes)
 
-These scripts talk to Starknet via JSON-RPC. Configure one of:
+These scripts talk to Starknet via JSON-RPC and default to `resolveRpcUrl()`.
+For standard scripts, configure RPC via:
 
-- Set `STARKNET_RPC_URL` in your environment (recommended), OR
-- Pass `rpcUrl` in the JSON input for scripts that support it.
+- Set `STARKNET_RPC_URL` in your environment (recommended).
+
+`watch-events-smart.js` is the main exception and supports per-run override via:
+
+- `config.httpRpcUrl` (HTTP JSON-RPC URL)
+- `config.wsRpcUrl` (WebSocket URL)
 
 If neither is provided, scripts fall back to the public Lava mainnet RPC:
 - `https://rpc.starknet.lava.build:443`

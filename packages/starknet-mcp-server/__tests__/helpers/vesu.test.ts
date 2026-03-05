@@ -71,6 +71,20 @@ describe("vesu helper", () => {
       expect(BigInt(result)).toBe(BigInt(usdcVToken));
     });
 
+    it("uses explicit pool factory override when provided", async () => {
+      const customFactory =
+        "0x03ac869e64b1164aaee7f3fd251f86581eab8bfbbd2abdf1e49c773282d4a09";
+      mockCallContract.mockResolvedValue([MOCK_VTOKEN_STRK]);
+
+      const provider = { callContract: mockCallContract } as any;
+      await getVTokenAddress(provider, VESU_PRIME_POOL, TOKENS.STRK, customFactory);
+
+      const call = mockCallContract.mock.calls[0]?.[0];
+      expect(call.entrypoint).toBe("v_token_for_asset");
+      expect(call.calldata).toEqual([VESU_PRIME_POOL, TOKENS.STRK]);
+      expect(BigInt(call.contractAddress)).toBe(BigInt(customFactory));
+    });
+
     it("normalizes vToken address to lowercase", async () => {
       mockCallContract.mockResolvedValue([
         "0x01A1B2C3D4E5F60708192A3B4C5D6E7F8090A1B2C3D4E5F60708192A3B4C5D6E",

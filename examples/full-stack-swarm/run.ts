@@ -1,4 +1,4 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env -S npx tsx
 /**
  * Full Stack Swarm (Sepolia)
  *
@@ -157,6 +157,71 @@ function createSemaphore(limit: number) {
   return { acquire, release };
 }
 
+type TxReceiptLike = {
+  execution_status?: string;
+  finality_status?: string;
+  statusReceipt?: string;
+  revert_reason?: string | null;
+  isSuccess?: () => boolean;
+};
+
+function receiptStatus(receipt?: TxReceiptLike): string {
+  if (!receipt) return "UNKNOWN";
+  const executionStatus =
+    typeof receipt.execution_status === "string" ? receipt.execution_status.toUpperCase() : undefined;
+  const finalityStatus =
+    typeof receipt.finality_status === "string" ? receipt.finality_status.toUpperCase() : undefined;
+  const legacyStatus =
+    typeof receipt.statusReceipt === "string" ? receipt.statusReceipt.toUpperCase() : undefined;
+  return executionStatus ?? finalityStatus ?? legacyStatus ?? "UNKNOWN";
+}
+
+function receiptSucceeded(receipt?: TxReceiptLike): boolean {
+  if (!receipt) return false;
+  if (typeof receipt.isSuccess === "function") {
+    try {
+      return Boolean(receipt.isSuccess());
+    } catch {
+      // Fall back to explicit status fields.
+    }
+  }
+  const executionStatus =
+    typeof receipt.execution_status === "string" ? receipt.execution_status.toUpperCase() : undefined;
+  const finalityStatus =
+    typeof receipt.finality_status === "string" ? receipt.finality_status.toUpperCase() : undefined;
+
+  if (executionStatus === "REVERTED") return false;
+  if (finalityStatus === "REJECTED" || finalityStatus === "ABORTED") return false;
+
+  if (executionStatus === "SUCCEEDED") {
+    return (
+      finalityStatus === undefined ||
+      finalityStatus === "ACCEPTED_ON_L2" ||
+      finalityStatus === "ACCEPTED_ON_L1"
+    );
+  }
+
+  return false;
+}
+
+async function waitForTransactionSuccess(
+  provider: RpcProvider,
+  transactionHash: string,
+  context: string,
+): Promise<void> {
+  const receipt = (await provider.waitForTransaction(transactionHash, {
+    retries: 120,
+    retryInterval: 3_000,
+  })) as TxReceiptLike;
+  if (receiptSucceeded(receipt)) return;
+  const status = receiptStatus(receipt);
+  const reason =
+    typeof receipt?.revert_reason === "string" && receipt.revert_reason.trim().length > 0
+      ? receipt.revert_reason.trim()
+      : "No revert reason provided";
+  throw new Error(`Transaction ${transactionHash} failed during ${context} (status=${status}): ${reason}`);
+}
+
 function parseToolTextJson(toolResponse: any): any {
   const text = toolResponse?.content?.find?.((c: any) => c?.type === "text")?.text;
   if (typeof text !== "string") return { raw: toolResponse };
@@ -292,7 +357,7 @@ function startSisna(args: {
   return { child, stop, proxyUrl: `http://127.0.0.1:${args.port}` };
 }
 
-function declareSessionAccountIfRequested(args: {
+async function declareSessionAccountIfRequested(args: {
   enabled: boolean;
   repoRoot: string;
   expectedClassHash: string;
@@ -325,7 +390,12 @@ function declareSessionAccountIfRequested(args: {
   const account = new Account({ provider, address: args.deployerAddress, signer: args.deployerPrivateKey });
   // Declare if not already declared.
   // NOTE: declareIfNot exists in starknet.js v8 and is what Starkclaw uses for pinned builds.
-  return account.declareIfNot({ contract: sierra, casm }).then(() => ({ ran: true }));
+  const result = (await account.declareIfNot({ contract: sierra, casm })) as any;
+  const txHash = result?.transaction_hash;
+  if (typeof txHash === "string" && txHash.length > 0) {
+    await waitForTransactionSuccess(provider, txHash, "declare_session_account_class");
+  }
+  return { ran: true };
 }
 
 async function main() {
@@ -365,6 +435,8 @@ async function main() {
   const maxCalls = envInt("MAX_CALLS", 25);
   const sessionSignValiditySeconds = envInt("SESSION_SIGN_VALIDITY_SECONDS", 7200);
   const sessionKeyLifetimeSeconds = envInt("SESSION_KEY_LIFETIME_SECONDS", 86400);
+  const verifyPolicyDenial = envBool("VERIFY_POLICY_DENIAL", true);
+  const probeRevokedSession = envBool("PROBE_REVOKED_SESSION", false);
   if (sessionKeyLifetimeSeconds < sessionSignValiditySeconds) {
     throw new Error("SESSION_KEY_LIFETIME_SECONDS must be >= SESSION_SIGN_VALIDITY_SECONDS");
   }
@@ -441,7 +513,7 @@ async function main() {
         classHash: sessionAccountClassHash,
         constructorCalldata: [ownerPublicKey],
       });
-      await provider.waitForTransaction(transaction_hash, { retries: 120, retryInterval: 3_000 });
+      await waitForTransactionSuccess(provider, transaction_hash, "deploy_session_account");
       state.agents.push({
         id: i,
         sessionAccountAddress: address,
@@ -492,7 +564,7 @@ async function main() {
 
             if (calls.length > 0) {
               const { transaction_hash } = await deployer.execute(calls);
-              await provider.waitForTransaction(transaction_hash, { retries: 120, retryInterval: 3_000 });
+              await waitForTransactionSuccess(provider, transaction_hash, "fund_agent_account");
               agent.fundTxHash = transaction_hash;
             }
           } finally {
@@ -571,6 +643,15 @@ async function main() {
             });
             agent.sessionKeyRegistered = true;
           }
+
+          // SISNA/keyring signs session txs using SNIP-12 v2.
+          // SessionAccount defaults to v1, so force v2 before proxy mode.
+          await sidecar.callTool("starknet_invoke_contract", {
+            contractAddress: agent.sessionAccountAddress,
+            entrypoint: "set_session_signature_mode",
+            calldata: ["2"],
+            gasfree: gasfreeOwner,
+          });
 
           // Spending policy for the sell token (per-call + per-window)
           const [maxPerCallLow, maxPerCallHigh] = toU256Calldata(maxPerCallRaw);
@@ -706,24 +787,46 @@ async function main() {
             }),
           );
 
-          // Prove policy denial by exceeding per-call cap.
-          // Keep it deterministic: use a raw amount multiplier.
-          let deniedByPolicy: boolean | null = null;
+          // Prove on-chain spending policy denial by submitting an oversized ERC-20 approve
+          // through the same session key path. Swap flows always include approve, so this probe
+          // validates the exact selector family used by real execution.
+          const deniedAmountRaw = maxPerWindowRaw + 1n;
+          const [denyLow, denyHigh] = toU256Calldata(deniedAmountRaw);
+          let deniedByPolicy = false;
+          let deniedByPolicyReason = "";
           try {
-            await sidecar.callTool("starknet_swap", {
-              sellToken,
-              buyToken,
-              amount: String(Number(amount) * 10),
-              slippage,
+            await sidecar.callTool("starknet_invoke_contract", {
+              contractAddress: spendingTokenAddress,
+              entrypoint: "approve",
+              calldata: [agent.sessionAccountAddress, denyLow, denyHigh],
               gasfree: gasfreeSwap,
               ...(paymasterFeeMode === "default" ? { gasToken: paymasterGasToken } : {}),
             });
-            deniedByPolicy = false;
-          } catch {
-            deniedByPolicy = true;
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            deniedByPolicyReason = message;
+            deniedByPolicy = /Spending:\s+exceeds per-call|Spending:\s+exceeds window limit/i.test(message);
+            if (!deniedByPolicy) {
+              throw new Error(`Oversized spending probe failed for non-policy reason: ${message}`);
+            }
           }
 
-          return { agent: agent.id, ok: true, balances, quote, swap, deniedByPolicy };
+          if (verifyPolicyDenial && !deniedByPolicy) {
+            throw new Error(
+              "Oversized spending probe unexpectedly succeeded; on-chain spending policy denial was not proven."
+            );
+          }
+
+          return {
+            agent: agent.id,
+            ok: true,
+            balances,
+            quote,
+            swap,
+            deniedByPolicy,
+            deniedByPolicyReason,
+            deniedAmountRaw: deniedAmountRaw.toString(),
+          };
         } catch (e) {
           return { agent: agent.id, ok: false, error: e instanceof Error ? e.message : String(e) };
         } finally {
@@ -734,9 +837,98 @@ async function main() {
     ),
   );
 
+  let revokedSessionProbeResults: Array<{ agent: number; ok: boolean; blocked?: boolean; reason?: string; txHash?: string; error?: string }> = [];
+  if (probeRevokedSession) {
+    revokedSessionProbeResults = await Promise.all(
+      state.agents.map((agent: any) =>
+        (async () => {
+          const ownerSidecar = new McpSidecar(`owner-revoke-${agent.id}`, {
+            STARKNET_RPC_URL: rpcUrl,
+            STARKNET_ACCOUNT_ADDRESS: agent.sessionAccountAddress,
+            STARKNET_PRIVATE_KEY: agent.ownerPrivateKey,
+            STARKNET_SIGNER_MODE: "direct",
+            AVNU_BASE_URL: avnuBaseUrl,
+            AVNU_PAYMASTER_URL: avnuPaymasterUrl,
+            AVNU_PAYMASTER_API_KEY: avnuPaymasterApiKey,
+            AVNU_PAYMASTER_FEE_MODE: paymasterFeeMode,
+            ERC8004_IDENTITY_REGISTRY_ADDRESS: identityRegistry,
+          });
+          const proxySidecar = new McpSidecar(`proxy-revoke-probe-${agent.id}`, {
+            STARKNET_RPC_URL: rpcUrl,
+            STARKNET_ACCOUNT_ADDRESS: agent.sessionAccountAddress,
+            STARKNET_SIGNER_MODE: "proxy",
+            AVNU_BASE_URL: avnuBaseUrl,
+            AVNU_PAYMASTER_URL: avnuPaymasterUrl,
+            AVNU_PAYMASTER_API_KEY: avnuPaymasterApiKey,
+            AVNU_PAYMASTER_FEE_MODE: paymasterFeeMode,
+            ERC8004_IDENTITY_REGISTRY_ADDRESS: identityRegistry,
+            KEYRING_PROXY_URL: proxyUrl,
+            KEYRING_HMAC_SECRET: keyringHmacSecret,
+            KEYRING_CLIENT_ID: `mcp-${agent.sessionKeyId}`,
+            KEYRING_SIGNING_KEY_ID: agent.sessionKeyId,
+            KEYRING_SESSION_VALIDITY_SECONDS: String(sessionSignValiditySeconds),
+          });
+          try {
+            await ownerSidecar.connect();
+            const revokeResp = parseToolTextJson(
+              await ownerSidecar.callTool("starknet_revoke_session_key", {
+                accountAddress: agent.sessionAccountAddress,
+                sessionPublicKey: agent.sessionPublicKey,
+                gasfree: gasfreeOwner,
+              })
+            );
+            agent.sessionKeyRegistered = false;
+
+            await proxySidecar.connect();
+            try {
+              await proxySidecar.callTool("starknet_invoke_contract", {
+                contractAddress: spendingTokenAddress,
+                entrypoint: "transfer",
+                calldata: [agent.sessionAccountAddress, "0x1", "0x0"],
+                gasfree: gasfreeSwap,
+                ...(paymasterFeeMode === "default" ? { gasToken: paymasterGasToken } : {}),
+              });
+              return {
+                agent: agent.id,
+                ok: false,
+                blocked: false,
+                txHash: revokeResp?.transactionHash,
+                error: "revoked session probe unexpectedly succeeded",
+              };
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              const blocked = /invalid signature|session|validate|unauthorized|max calls|expired|revoked/i.test(
+                message
+              );
+              return {
+                agent: agent.id,
+                ok: blocked,
+                blocked,
+                reason: message,
+                txHash: revokeResp?.transactionHash,
+              };
+            }
+          } catch (error) {
+            return {
+              agent: agent.id,
+              ok: false,
+              error: error instanceof Error ? error.message : String(error),
+            };
+          } finally {
+            await ownerSidecar.close();
+            await proxySidecar.close();
+          }
+        })()
+      )
+    );
+    fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
+    try { fs.chmodSync(statePath, 0o600); } catch {}
+  }
+
   const ok =
     ownerResults.every((r: any) => r.ok) &&
-    tradeResults.every((r: any) => r.ok);
+    tradeResults.every((r: any) => r.ok) &&
+    revokedSessionProbeResults.every((r) => r.ok);
 
   const report = {
     ok,
@@ -760,9 +952,12 @@ async function main() {
       maxPerWindowRaw: String(maxPerWindowRaw),
       windowSeconds,
       maxCalls,
+      verifyPolicyDenial,
+      probeRevokedSession,
     },
     ownerConfig: ownerResults,
     results: tradeResults,
+    revokedSessionProbe: probeRevokedSession ? revokedSessionProbeResults : undefined,
     stateFile: statePath,
     sisna: { started: Boolean(sisna), proxyUrl },
   };

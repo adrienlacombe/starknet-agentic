@@ -14,14 +14,15 @@
  *
  * Usage examples:
  *   node scripts/loot-survivor.js '{"mode":"state","adventurerId":123}'
- *   node scripts/loot-survivor.js '{"mode":"start_game","adventurerId":123,"weapon":0,"accountAddress":"0x.."}'
+ *   node scripts/loot-survivor.js '{"mode":"start_game","adventurerId":123,"weapon":0, "privateKey":"0x..","accountAddress":"0x.."}'
  *
- * For write modes, private key is loaded from ~/.openclaw/secrets/starknet via accountAddress.
+ * If privateKey/accountAddress are omitted for write modes, PRIVATE_KEY env can be used
+ * and accountAddress must be provided.
  */
 
-import { Provider, Account, Contract, CallData, shortString } from 'starknet';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 'fs';
-import { join, isAbsolute } from 'path';
+import { RpcProvider, Account, Contract, CallData, shortString, hash } from 'starknet';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, openSync, closeSync, unlinkSync, statSync } from 'fs';
+import { join } from 'path';
 import { homedir } from 'os';
 import { resolveRpcUrl } from './_rpc.js';
 
@@ -35,6 +36,68 @@ const ADDRS = {
 // Local UX state: latest adventurer id per account
 const LOOT_STATE_DIR = join(homedir(), '.openclaw', 'typhoon-loot-survivor');
 const LOOT_STATE_FILE = join(LOOT_STATE_DIR, 'latest.json');
+const LOOT_STATE_TMP_FILE = join(LOOT_STATE_DIR, 'latest.json.tmp');
+const LOOT_STATE_LOCK_FILE = join(LOOT_STATE_DIR, '.latest.lock');
+const LOCK_SLEEP_CELL = new Int32Array(new SharedArrayBuffer(4));
+const LOCK_STALE_MS = 5000;
+
+function sleepSync(ms) {
+  Atomics.wait(LOCK_SLEEP_CELL, 0, 0, ms);
+}
+
+function withLootStateLock(fn) {
+  mkdirSync(LOOT_STATE_DIR, { recursive: true });
+  const deadlineMs = Date.now() + 1000;
+  let lockFd = null;
+  while (lockFd === null) {
+    try {
+      lockFd = openSync(LOOT_STATE_LOCK_FILE, 'wx');
+    } catch (err) {
+      if (err?.code !== 'EEXIST') {
+        throw err;
+      }
+
+      try {
+        const st = statSync(LOOT_STATE_LOCK_FILE);
+        if (Date.now() - st.mtimeMs > LOCK_STALE_MS) {
+          try { unlinkSync(LOOT_STATE_LOCK_FILE); } catch {}
+          continue;
+        }
+      } catch {}
+
+      if (Date.now() >= deadlineMs) {
+        throw err;
+      }
+      sleepSync(20);
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    try { closeSync(lockFd); } catch {}
+    try { unlinkSync(LOOT_STATE_LOCK_FILE); } catch {}
+  }
+}
+
+function lootStateMutate(accountAddress, mutateEntry) {
+  if (!accountAddress) return;
+  try {
+    withLootStateLock(() => {
+      const map = lootStateLoad();
+      const entry = lootStateGetEntry(map, accountAddress);
+      mutateEntry(entry);
+      lootStateWriteEntry(map, accountAddress, entry);
+      writeFileSync(LOOT_STATE_TMP_FILE, JSON.stringify(map, null, 2) + '\n', 'utf8');
+      renameSync(LOOT_STATE_TMP_FILE, LOOT_STATE_FILE);
+    });
+  } catch (err) {
+    console.warn(JSON.stringify({
+      warning: 'lootStateMutate_failed',
+      accountAddress,
+      error: err?.message || String(err)
+    }));
+  }
+}
 
 function lootStateLoad() {
   try {
@@ -79,30 +142,16 @@ function lootStateGetPending(accountAddress) {
 
 function lootStateSetLatest(accountAddress, adventurerId) {
   if (accountAddress == null || adventurerId == null || adventurerId === '') return;
-  try {
-    mkdirSync(LOOT_STATE_DIR, { recursive: true });
-    const map = lootStateLoad();
-    const entry = lootStateGetEntry(map, accountAddress);
+  lootStateMutate(accountAddress, (entry) => {
     entry.latestAdventurerId = String(adventurerId);
-    lootStateWriteEntry(map, accountAddress, entry);
-    writeFileSync(LOOT_STATE_FILE, JSON.stringify(map, null, 2) + '\n', 'utf8');
-  } catch {
-    // best-effort
-  }
+  });
 }
 
 function lootStateSetPending(accountAddress, pending) {
   if (!accountAddress) return;
-  try {
-    mkdirSync(LOOT_STATE_DIR, { recursive: true });
-    const map = lootStateLoad();
-    const entry = lootStateGetEntry(map, accountAddress);
+  lootStateMutate(accountAddress, (entry) => {
     entry.pendingEncounter = Boolean(pending);
-    lootStateWriteEntry(map, accountAddress, entry);
-    writeFileSync(LOOT_STATE_FILE, JSON.stringify(map, null, 2) + '\n', 'utf8');
-  } catch {
-    // best-effort
-  }
+  });
 }
 
 function loadPersistedAdventurerId(accountAddress) {
@@ -114,47 +163,8 @@ function savePersistedAdventurerId(accountAddress, adventurerId) {
 }
 
 function fail(message, extra = {}) {
-  console.error(JSON.stringify({ success: false, error: message, ...extra }));
+  console.log(JSON.stringify({ success: false, error: message, ...extra }));
   process.exit(1);
-}
-
-function getSecretsDir() {
-  return join(homedir(), '.openclaw', 'secrets', 'starknet');
-}
-
-function loadPrivateKeyByAccountAddress(accountAddress) {
-  const dir = getSecretsDir();
-  if (!existsSync(dir)) fail('Missing secrets directory: ~/.openclaw/secrets/starknet');
-
-  const files = readdirSync(dir).filter(f => f.endsWith('.json'));
-  const target = String(accountAddress).toLowerCase();
-
-  for (const file of files) {
-    const accountPath = join(dir, file);
-    let data;
-    try {
-      data = JSON.parse(readFileSync(accountPath, 'utf8'));
-    } catch {
-      continue;
-    }
-
-    if (String(data.address || '').toLowerCase() !== target) continue;
-
-    if (!(typeof data.privateKeyPath === 'string' && data.privateKeyPath.trim().length > 0)) {
-      fail('Account is missing privateKeyPath (file-based key is required).');
-    }
-
-    const keyPath = isAbsolute(data.privateKeyPath)
-      ? data.privateKeyPath
-      : join(dir, data.privateKeyPath);
-
-    if (!existsSync(keyPath)) fail(`Private key file not found: ${keyPath}`);
-    const privateKey = readFileSync(keyPath, 'utf8').trim();
-    if (!privateKey) fail('Private key file is empty.');
-    return privateKey;
-  }
-
-  fail(`Account not found in ~/.openclaw/secrets/starknet for address: ${accountAddress}`);
 }
 
 function parseJsonArg() {
@@ -323,30 +333,54 @@ async function getReceipt(provider, txHash) {
 }
 
 function tryExtractMintedAdventurerIdFromReceipt(receipt) {
-  // Heuristic: look for ERC721 Transfer event that includes tokenId (u256) or felt.
-  // We do NOT assume exact layout; we just scan numeric-looking fields and pick plausible u64.
+  // Prefer ERC721 Transfer events and extract token id from event data.
   if (!receipt || !Array.isArray(receipt.events)) return null;
-  const candidates = [];
+  const transferSelector = hash.getSelectorFromName('Transfer');
+  const u64Max = 2n ** 64n - 1n;
+  const transferCandidates = [];
 
   for (const ev of receipt.events) {
+    const eventKey0 = Array.isArray(ev?.keys) ? String(ev.keys[0] || '') : '';
+    if (!eventKey0) {
+      continue;
+    }
+    let sameSelector = false;
+    try {
+      sameSelector = BigInt(eventKey0) === BigInt(transferSelector);
+    } catch {}
+    if (!sameSelector) {
+      continue;
+    }
+
     const data = ev?.data || [];
+    const preferredSlots = [];
+    if (data.length >= 3) preferredSlots.push(data[2]); // common ERC721 tokenId slot
+    if (data.length > 0) preferredSlots.push(data[data.length - 1]); // fallback to last slot
+
+    for (const x of preferredSlots) {
+      try {
+        const b = BigInt(x);
+        if (b >= 0n && b <= u64Max) return b.toString();
+      } catch {}
+    }
+
     for (const x of data) {
       try {
         const b = BigInt(x);
-        if (b >= 0n && b <= (2n ** 64n - 1n)) candidates.push(b);
+        if (b >= 0n && b <= u64Max) transferCandidates.push(b);
       } catch {}
     }
   }
 
-  // Prefer the largest u64-ish value (token ids are usually not tiny like 0/1)
-  candidates.sort((a, b) => (a > b ? -1 : a < b ? 1 : 0));
-  return candidates[0] ? candidates[0].toString() : null;
+  if (transferCandidates.length === 0) return null;
+  transferCandidates.sort((a, b) => (a > b ? -1 : a < b ? 1 : 0));
+  return transferCandidates[0].toString();
 }
 
 async function main() {
   const input = parseJsonArg();
   const rpcUrl = resolveRpcUrl();
-  const provider = new Provider({ nodeUrl: rpcUrl });
+  const provider = new RpcProvider({ nodeUrl: rpcUrl });
 
   const mode = input.mode;
   if (!mode) {
@@ -369,10 +403,10 @@ async function main() {
   }
 
   // Write modes need account
+  const privateKey = input.privateKey || process.env.PRIVATE_KEY;
   const accountAddress = input.accountAddress;
+  if (!privateKey) fail('Missing privateKey (or PRIVATE_KEY env) for write mode');
   if (!accountAddress) fail('Missing accountAddress for write mode');
-  if (input.privateKey) fail('Do not pass privateKey in JSON input.');
-  const privateKey = loadPrivateKeyByAccountAddress(accountAddress);
 
   const account = new Account({
     provider,
@@ -457,6 +491,43 @@ async function main() {
     return id;
   };
 
+  const runEncounterMode = async ({
+    modeName,
+    entrypoint,
+    optionField,
+    optionValue,
+    choicePrompt
+  }) => {
+    const adventurerId = ensuredAdventurerId(input.adventurerId);
+    const tx = await invoke(account, ADDRS.GAME, entrypoint, [
+      toU64(adventurerId, 'adventurerId'),
+      optionValue ? '1' : '0'
+    ]);
+    if (accountAddress) savePersistedAdventurerId(accountAddress, adventurerId);
+
+    const postState = await readGameState(provider, adventurerId);
+    const summary = buildSummaryFromGameState(postState);
+    const inEncounter = isBeastEncounter(summary);
+    if (accountAddress) lootStateSetPending(accountAddress, inEncounter);
+
+    const out = {
+      success: true,
+      mode: modeName,
+      adventurerId,
+      [optionField]: optionValue,
+      ...tx,
+      postState,
+      summary
+    };
+    if (inEncounter) {
+      out.nextStep = 'USER_CHOICE';
+      out.choices = ['attack', 'flee'];
+      out.choicePrompt = choicePrompt;
+      out.beastStats = extractBeastStats(postState);
+    }
+    console.log(JSON.stringify(out, null, 2));
+  };
+
   if (mode === 'start_game') {
     const adventurerId = ensuredAdventurerId(input.adventurerId);
     const weapon = input.weapon ?? 0;
@@ -474,75 +545,38 @@ async function main() {
   }
 
   if (mode === 'explore') {
-    const adventurerId = ensuredAdventurerId(input.adventurerId);
     const tillBeast = toBool(input.tillBeast, false);
-    const tx = await invoke(account, ADDRS.GAME, 'explore', [toU64(adventurerId, 'adventurerId'), tillBeast ? '1' : '0']);
-    if (accountAddress) savePersistedAdventurerId(accountAddress, adventurerId);
-
-    const postState = await readGameState(provider, adventurerId);
-    const summary = buildSummaryFromGameState(postState);
-
-    // If exploration resulted in a beast encounter, prompt user to attack or flee.
-    const beastEncounter = isBeastEncounter(summary);
-    if (accountAddress) lootStateSetPending(accountAddress, beastEncounter);
-
-    const out = { success: true, mode, adventurerId, tillBeast, ...tx, postState, summary };
-    if (beastEncounter) {
-      out.nextStep = 'USER_CHOICE';
-      out.choices = ['attack', 'flee'];
-      out.choicePrompt = 'Beast encountered. Do you want to attack or flee?';
-      out.beastStats = extractBeastStats(postState);
-    }
-
-    console.log(JSON.stringify(out, null, 2));
+    await runEncounterMode({
+      modeName: mode,
+      entrypoint: 'explore',
+      optionField: 'tillBeast',
+      optionValue: tillBeast,
+      choicePrompt: 'Beast encountered. Do you want to attack or flee?'
+    });
     return;
   }
 
   if (mode === 'attack') {
-    const adventurerId = ensuredAdventurerId(input.adventurerId);
     const toTheDeath = toBool(input.toTheDeath, false);
-    const tx = await invoke(account, ADDRS.GAME, 'attack', [toU64(adventurerId, 'adventurerId'), toTheDeath ? '1' : '0']);
-    if (accountAddress) savePersistedAdventurerId(accountAddress, adventurerId);
-
-    const postState = await readGameState(provider, adventurerId);
-    const summary = buildSummaryFromGameState(postState);
-
-    const stillEncounter = isBeastEncounter(summary);
-    if (accountAddress) lootStateSetPending(accountAddress, stillEncounter);
-
-    const out = { success: true, mode, adventurerId, toTheDeath, ...tx, postState, summary };
-    if (stillEncounter) {
-      out.nextStep = 'USER_CHOICE';
-      out.choices = ['attack', 'flee'];
-      out.choicePrompt = 'Combat continues. Do you want to attack again or flee?';
-      out.beastStats = extractBeastStats(postState);
-    }
-
-    console.log(JSON.stringify(out, null, 2));
+    await runEncounterMode({
+      modeName: mode,
+      entrypoint: 'attack',
+      optionField: 'toTheDeath',
+      optionValue: toTheDeath,
+      choicePrompt: 'Combat continues. Do you want to attack again or flee?'
+    });
     return;
   }
 
   if (mode === 'flee') {
-    const adventurerId = ensuredAdventurerId(input.adventurerId);
     const toTheDeath = toBool(input.toTheDeath, false);
-    const tx = await invoke(account, ADDRS.GAME, 'flee', [toU64(adventurerId, 'adventurerId'), toTheDeath ? '1' : '0']);
-    if (accountAddress) savePersistedAdventurerId(accountAddress, adventurerId);
-
-    const postState = await readGameState(provider, adventurerId);
-    const summary = buildSummaryFromGameState(postState);
-
-    const stillEncounter = isBeastEncounter(summary);
-    if (accountAddress) lootStateSetPending(accountAddress, stillEncounter);
-
-    const out = { success: true, mode, adventurerId, toTheDeath, ...tx, postState, summary };
-    if (stillEncounter) {
-      out.nextStep = 'USER_CHOICE';
-      out.choices = ['attack', 'flee'];
-      out.choicePrompt = 'You are still in combat. Do you want to attack or flee?';
-      out.beastStats = extractBeastStats(postState);
-    }
-
-    console.log(JSON.stringify(out, null, 2));
+    await runEncounterMode({
+      modeName: mode,
+      entrypoint: 'flee',
+      optionField: 'toTheDeath',
+      optionValue: toTheDeath,
+      choicePrompt: 'You are still in combat. Do you want to attack or flee?'
+    });
     return;
   }
 
