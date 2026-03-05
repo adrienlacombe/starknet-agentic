@@ -138,12 +138,19 @@ jobs:
       - name: Validate parity with SISNA
         if: steps.fetch_sisna.outputs.available == 'true'
         run: |
-          node scripts/security/check-session-signature-parity.mjs \
+          if ! node scripts/security/check-session-signature-parity.mjs \
             --counterpart "SISNA" \
             --local-schema spec/session-signature-v2.schema.json \
             --remote-schema /tmp/sisna-session-signature-v2.schema.json \
             --local-vectors spec/session-signature-v2.json \
-            --remote-vectors /tmp/sisna-session-signature-v2.json
+            --remote-vectors /tmp/sisna-session-signature-v2.json; then
+            if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+              echo "::warning::SISNA parity drift detected on PR; keep coordinated rollout open."
+            else
+              echo "SISNA parity drift detected on ${GITHUB_EVENT_NAME}; failing."
+              exit 1
+            fi
+          fi
 
       - name: Fetch starkclaw vectors
         id: fetch_starkclaw
@@ -168,9 +175,16 @@ jobs:
       - name: Validate parity with starkclaw
         if: steps.fetch_starkclaw.outputs.available == 'true'
         run: |
-          node scripts/security/check-session-signature-parity.mjs \
+          if ! node scripts/security/check-session-signature-parity.mjs \
             --counterpart "starkclaw" \
             --local-schema spec/session-signature-v2.schema.json \
             --remote-schema /tmp/starkclaw-session-signature-v2.schema.json \
             --local-vectors spec/session-signature-v2.json \
-            --remote-vectors /tmp/starkclaw-session-signature-v2.json
+            --remote-vectors /tmp/starkclaw-session-signature-v2.json; then
+            if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+              echo "::warning::starkclaw parity drift detected on PR; keep coordinated rollout open."
+            else
+              echo "starkclaw parity drift detected on ${GITHUB_EVENT_NAME}; failing."
+              exit 1
+            fi
+          fi
