@@ -174,7 +174,7 @@ function validatePromptSecurity(prompt) {
     { pattern: /\b(friend\s+said|prior\s+message|you\s+promised)\b.{0,80}\b(reveal|print|show|secrets?|keys?)\b/i, threat: 'instruction_override' },
     { pattern: /\b(do\s+it\s+now|just\s+do\s+it)\b/i, threat: 'auth_bypass' },
     { pattern: /\bdon[’']t\s+warn\b/i, threat: 'instruction_override' },
-    { pattern: /\b(code\s*block|```|\[send\b)\b/i, threat: 'instruction_override' },
+    { pattern: /(?:\bcode\s*block\b|```|\[send\b)/i, threat: 'instruction_override' },
     { pattern: /\b(base64|rot13|atob|btoa)\b/i, threat: 'obfuscation' },
 
     // Attempts to access local files / secrets / logs
