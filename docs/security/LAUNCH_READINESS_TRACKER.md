@@ -17,6 +17,11 @@ with reproducible evidence.
   - `#332` mainnet ownership/signer policy
   - `#333` production deployment runbook
   - `#334` external audit scope and closure policy
+- Deferred (out of scope for `#273`, gated before any managed-backend launch):
+  - `#219`, `#222`, `#223`, `#224`, `#225`, `#317`
+  - tracking anchor: this tracker + `docs/security/EXTERNAL_AUDIT_SCOPE.md`
+  - owner: runtime-owner
+  - closure gate: no managed-backend release may proceed until all deferred items are closed with evidence
 
 ## P0 Closure Rules
 

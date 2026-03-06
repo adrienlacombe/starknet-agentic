@@ -51,6 +51,22 @@ SP-05 evidence requirements:
 - Launch path: Sepolia confirmation with tx timestamp delta covering the full
   policy window (or explicit waiver with owner + due date).
 
+## Required Inputs for Snippets
+
+Set these before running SP-06 / SP-08 commands.
+
+Shared network/account configuration (see
+`docs/security/PRODUCTION_DEPLOYMENT_RUNBOOK.md`):
+
+- `SEPOLIA_RPC_URL`
+
+QA-specific variables:
+
+- `SESSION_ACCOUNT_ADDR` (deployed session account used for tests)
+- `SESSION_KEY_KEYSTORE_PATH` (keystore path for the session signer)
+- `ERC20_TOKEN_ADDR` (token contract used by transfer checks)
+- `RECIPIENT_ADDR` (test recipient address)
+
 ## Suggested Command Evidence Snippets
 
 ```bash

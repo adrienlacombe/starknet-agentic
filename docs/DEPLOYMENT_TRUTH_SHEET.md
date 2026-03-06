@@ -102,3 +102,5 @@ Conclusion:
 - Production operations policy/runbook references:
   - `docs/security/MAINNET_OWNERSHIP_SIGNER_POLICY.md`
   - `docs/security/PRODUCTION_DEPLOYMENT_RUNBOOK.md`
+  - `docs/security/EXTERNAL_AUDIT_SCOPE.md`
+  - `docs/security/SPENDING_POLICY_SIGNOFF_MATRIX.md`
