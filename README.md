@@ -35,9 +35,11 @@ The scaffolder detects your environment (OpenClaw/MoltBook, Claude Code, Cursor,
 
 ## System Requirements
 
-- Node.js `>=20.9.0`
-- `pnpm` `>=10.28.2` (workspace package manager)
-- Scarb `>=2.14.0` + Starknet Foundry (`snforge`) `>=0.54.1` (for Cairo builds/tests)
+- CLI users (`npx create-starknet-agent@latest`): Node.js `>=18.0.0`
+- Contributors from source (this monorepo):
+  - Node.js `>=20.9.0`
+  - `pnpm` `>=10.28.2` (workspace package manager)
+  - Scarb `>=2.14.0` + Starknet Foundry (`snforge`) `>=0.54.1` (for Cairo builds/tests)
 
 ## Choose Your Path
 
@@ -131,10 +133,9 @@ pnpm test
 ### 3) Run Cairo checks
 
 ```bash
-cd contracts/erc8004-cairo && scarb build && snforge test
-cd ../huginn-registry && scarb build && snforge test
-cd ../agent-account && scarb build && snforge test
-cd ../session-account && scarb build && snforge test
+for dir in contracts/erc8004-cairo contracts/huginn-registry contracts/agent-account contracts/session-account; do
+  (cd "$dir" && scarb build && snforge test) || exit 1
+done
 ```
 
 ### 4) Run a minimal E2E demo
@@ -163,7 +164,7 @@ pnpm demo:hello-agent
 
 - read security policy: [`SECURITY.md`](./SECURITY.md)
 - hardened signer setup: use proxy signer mode in [`packages/starknet-mcp-server`](./packages/starknet-mcp-server/)
-- CI quality gates: [`ci.yml`](./.github/workflows/ci.yml), [`codeql.yml`](./.github/workflows/codeql.yml), [`dependency-review.yml`](./.github/workflows/dependency-review.yml)
+- GitHub Actions quality gates: [`ci.yml`](./.github/workflows/ci.yml), [`codeql.yml`](./.github/workflows/codeql.yml), [`dependency-review.yml`](./.github/workflows/dependency-review.yml)
 - publish pipeline uses provenance + attestations: [`publish.yml`](./.github/workflows/publish.yml)
 
 Release artifact verification (recommended):
