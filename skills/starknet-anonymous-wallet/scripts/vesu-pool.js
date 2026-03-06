@@ -214,8 +214,8 @@ async function main() {
       return;
     }
 
-    const collateralInfo = await resolveToken(collSym);
-    const debtInfo = await resolveToken(debtSym);
+    collateralInfo = await resolveToken(collSym);
+    debtInfo = await resolveToken(debtSym);
     if (!collateralInfo || !debtInfo) {
       console.log(JSON.stringify({
         success: false,
