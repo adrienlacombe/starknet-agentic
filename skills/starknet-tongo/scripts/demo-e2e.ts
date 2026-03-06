@@ -110,6 +110,8 @@ async function main() {
   }
 
   // --- 4. Withdraw ---
+  // NOTE: In production, receiver would withdraw to their own Starknet address.
+  // `account.address` is used here for demo simplicity (tokens return to the shared gas account).
   console.log(`\n[4/4] Withdrawing ${AMOUNT} back to ERC20...`);
   const withdrawOp = await receiver.withdraw({
     amount: AMOUNT,
