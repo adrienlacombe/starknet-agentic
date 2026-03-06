@@ -590,7 +590,7 @@ class SmartEventWatcher {
     logEvent(eventData);
     
     if (this.webhookUrl) {
-      sendWebhook(this.webhookUrl, eventData, this.webhookTimeoutMs);
+      sendWebhook(this.webhookUrl, eventData, this.webhookTimeoutMs).catch(() => {});
     }
   }
 
