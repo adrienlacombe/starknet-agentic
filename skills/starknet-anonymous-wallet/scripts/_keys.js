@@ -3,6 +3,7 @@ import { join, isAbsolute, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 
 export function getSecretsDir() {
+  if (process.env.STARKNET_SECRETS_DIR) return process.env.STARKNET_SECRETS_DIR;
   return join(homedir(), '.openclaw', 'secrets', 'starknet');
 }
 

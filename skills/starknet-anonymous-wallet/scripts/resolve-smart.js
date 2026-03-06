@@ -279,6 +279,7 @@ function tryParseJSON(str) {
 
 // ============ SECRETS MANAGEMENT (SINGLE ACCESS) ============
 function getSecretsDir() {
+  if (process.env.STARKNET_SECRETS_DIR) return process.env.STARKNET_SECRETS_DIR;
   return join(homedir(), '.openclaw', 'secrets', 'starknet');
 }
 
