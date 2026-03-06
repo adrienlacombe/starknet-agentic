@@ -102,6 +102,7 @@ export function findCanonicalAction(action, abiFunctions = []) {
   const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const hasBoundaryMatch = (fName, token) => {
     const normalized = String(token || '').replace(/\s+/g, '_');
+    if (!normalized || normalized.length < 2) return false;
     const re = new RegExp(`(^|_)${esc(normalized)}(_|$)`);
     return re.test(fName);
   };
