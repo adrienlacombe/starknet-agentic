@@ -19,7 +19,7 @@
  * For write modes, private key is loaded from ~/.openclaw/secrets/starknet via accountAddress.
  */
 
-import { Provider, Account, Contract, CallData, shortString, hash } from 'starknet';
+import { RpcProvider as Provider, Account, Contract, CallData, shortString, hash } from 'starknet';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, rmSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';

@@ -16,7 +16,7 @@
  * }
  */
 
-import { Provider, Account, Contract } from 'starknet';
+import { RpcProvider as Provider, Account, Contract } from 'starknet';
 
 import { resolveRpcUrl } from './_rpc.js';
 import { loadPrivateKeyByAccountAddress } from './_keys.js';
