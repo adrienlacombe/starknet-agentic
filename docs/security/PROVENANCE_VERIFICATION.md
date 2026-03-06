@@ -68,7 +68,7 @@ To generate a tagged staging bundle with attestations but without publishing to 
 gh workflow run publish.yml \
   -R "$REPO" \
   --ref main \
-  -f release_tag="staging-YYYYMMDD" \
+  -f release_tag="staging-YYYY-MM-DD" \
   -f publish_to_npm=false
 ```
 
