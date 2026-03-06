@@ -12,7 +12,7 @@
 
 import { RpcProvider as Provider, CallData } from 'starknet';
 import { readFileSync, writeFileSync, existsSync, readdirSync, unlinkSync, mkdirSync, renameSync, rmSync } from 'fs';
-import { join, dirname, isAbsolute } from 'path';
+import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { homedir } from 'os';
 import { spawn } from 'child_process';
@@ -20,6 +20,7 @@ import { findCanonicalAction, ALL_SYNONYMS } from './synonyms.js';
 
 import { resolveRpcUrl } from './_rpc.js';
 import { fetchVerifiedTokens } from './_tokens.js';
+import { loadPrivateKeyByAccountAddress } from './_keys.js';
 
 const AVNU_VIRTUAL_SENTINELS = new Set(['__avnu_virtual__', '0x01']);
 const VESU_VIRTUAL_SENTINELS = new Set(['__vesu_virtual__', '0x02']);
@@ -294,29 +295,17 @@ function loadAccount(index = 0) {
   const accountPath = join(dir, files[index]);
   const data = JSON.parse(readFileSync(accountPath, 'utf8'));
   
-  // Load private key from .key file only (never inline JSON)
+  // Load private key via shared hardened loader (_keys.js)
+  const privateKeyPath = (typeof data.privateKeyPath === 'string' && data.privateKeyPath.trim().length > 0)
+    ? data.privateKeyPath
+    : null;
+
   let privateKey = null;
-  let privateKeyPath = null;
-  if (typeof data.privateKeyPath === 'string' && data.privateKeyPath.trim().length > 0) {
-    privateKeyPath = isAbsolute(data.privateKeyPath)
-      ? data.privateKeyPath
-      : join(dir, data.privateKeyPath);
-
-    if (!existsSync(privateKeyPath)) {
-      return {
-        error: "Missing private key for account",
-        accountPath,
-        privateKeyPath,
-        index,
-        total: files.length
-      };
-    }
-    privateKey = readFileSync(privateKeyPath, 'utf8').trim();
-  }
-
-  if (!privateKey) {
+  try {
+    privateKey = loadPrivateKeyByAccountAddress(data.address);
+  } catch (err) {
     return {
-      error: "Missing private key for account (set privateKeyPath to a key file under ~/.openclaw/secrets/starknet)",
+      error: err?.message || "Missing private key for account",
       accountPath,
       privateKeyPath,
       index,
