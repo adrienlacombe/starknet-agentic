@@ -231,6 +231,7 @@ The `fee_to_sender` field enables relayer/paymaster patterns where a third party
 
 ## Security Notes
 
+- **Critical**: `TONGO_PRIVATE_KEY` is non-recoverable. There is no seed phrase or recovery mechanism. Loss of this key means permanent loss of all encrypted balances. Store it with the same care as an offline hardware wallet seed.
 - Tongo private keys are separate from Starknet account keys
 - Transfer amounts are encrypted on-chain; only sender, receiver, and optional auditor can see them
 - Withdraw amounts are public (visible on-chain)
