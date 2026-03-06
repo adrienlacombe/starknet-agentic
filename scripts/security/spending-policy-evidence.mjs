@@ -113,6 +113,7 @@ function toSafeRelativePath(relativePath) {
   const normalized = relativePath.replace(/\\/g, "/");
   if (
     normalized.startsWith("/")
+    || /^[A-Za-z]:\//.test(normalized)
     || normalized.includes("../")
     || normalized === ".."
     || normalized.includes("/..")
@@ -160,7 +161,7 @@ function validateEvidenceEntry(entry, options) {
     }
   }
 
-  if (entry.url !== undefined && !isNonEmptyString(String(entry.url))) {
+  if (entry.url !== undefined && !isNonEmptyString(entry.url)) {
     fail("Evidence url must be a non-empty string when provided");
   }
 }
@@ -312,12 +313,12 @@ function validateResidualRisks(residualRisks) {
       fail(`residualRisks[${index}] must be an object`);
     }
 
-    if (entry.description !== undefined && !isNonEmptyString(entry.description)) {
-      fail(`residualRisks[${index}].description must be non-empty when provided`);
+    if (!isNonEmptyString(entry.description)) {
+      fail(`residualRisks[${index}].description must be a non-empty string`);
     }
 
-    if (entry.owner !== undefined && !isNonEmptyString(entry.owner)) {
-      fail(`residualRisks[${index}].owner must be non-empty when provided`);
+    if (!isNonEmptyString(entry.owner)) {
+      fail(`residualRisks[${index}].owner must be a non-empty string`);
     }
 
     if (entry.dueDate !== undefined) {

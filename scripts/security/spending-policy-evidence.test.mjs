@@ -141,6 +141,76 @@ test("verifySpendingPolicyReport rejects path traversal in evidence paths", () =
   fs.rmSync(bundleDir, { recursive: true, force: true });
 });
 
+test("verifySpendingPolicyReport rejects Windows absolute evidence paths", () => {
+  const bundleDir = makeTempDir();
+  const report = createReportTemplate({ runId: "sp-test", generatedAt: "2026-03-06T00:00:00.000Z" });
+  report.checks = report.checks.map((entry, index) =>
+    index === 0
+      ? {
+          ...entry,
+          status: "pass",
+          evidence: [
+            {
+              type: "log",
+              path: "C:\\windows\\system32\\proof.log",
+            },
+          ],
+        }
+      : entry,
+  );
+
+  assert.throws(
+    () => verifySpendingPolicyReport(report, { bundleDir }),
+    /safe relative path/i,
+  );
+
+  fs.rmSync(bundleDir, { recursive: true, force: true });
+});
+
+test("verifySpendingPolicyReport fails on duplicate checkId", () => {
+  const report = createReportTemplate({ runId: "sp-test", generatedAt: "2026-03-06T00:00:00.000Z" });
+  report.checks.push({ ...report.checks[0] });
+
+  assert.throws(
+    () => verifySpendingPolicyReport(report, { bundleDir: process.cwd() }),
+    /duplicate checkId/i,
+  );
+});
+
+test("verifySpendingPolicyReport rejects non-string evidence url", () => {
+  const report = createReportTemplate({ runId: "sp-test", generatedAt: "2026-03-06T00:00:00.000Z" });
+  report.checks = report.checks.map((entry, index) =>
+    index === 0
+      ? {
+          ...entry,
+          status: "pass",
+          evidence: [
+            {
+              type: "tx",
+              txHash: "0x1",
+              url: null,
+            },
+          ],
+        }
+      : entry,
+  );
+
+  assert.throws(
+    () => verifySpendingPolicyReport(report, { bundleDir: process.cwd() }),
+    /evidence url must be a non-empty string/i,
+  );
+});
+
+test("verifySpendingPolicyReport rejects empty residual risks entries", () => {
+  const report = createReportTemplate({ runId: "sp-test", generatedAt: "2026-03-06T00:00:00.000Z" });
+  report.residualRisks = [{}];
+
+  assert.throws(
+    () => verifySpendingPolicyReport(report, { bundleDir: process.cwd() }),
+    /residualRisks\[0\]\.description must be a non-empty string/i,
+  );
+});
+
 test("verifySpendingPolicyReport passes for closed report", (t) => {
   const bundleDir = makeTempDir();
   t.after(() => fs.rmSync(bundleDir, { recursive: true, force: true }));
