@@ -94,15 +94,12 @@ await provider.waitForTransaction(response.transaction_hash);
 ### Transfer (Confidential)
 
 ```typescript
-const receiverTongo = new TongoAccount(
-  receiverPrivateKey,
-  process.env.TONGO_CONTRACT_ADDRESS,
-  provider,
-);
+// Receiver shares their Tongo address (public -- safe to share)
+const receiverTongoAddress = "Base58EncodedPublicKeyFromReceiver";
 
 const transferOp = await tongo.transfer({
   amount: 50n,
-  to: receiverTongo.publicKey,
+  to: receiverTongoAddress, // Public Tongo address, never use receiver's private key
   sender: signer.address,
   fee_to_sender: 0n,
 });
@@ -114,8 +111,10 @@ await provider.waitForTransaction(response.transaction_hash);
 
 ### Rollover (Activate Received Funds)
 
+The receiver calls rollover on their own Tongo account to activate pending funds:
+
 ```typescript
-const rolloverOp = await receiverTongo.rollover({
+const rolloverOp = await tongo.rollover({
   sender: signer.address,
 });
 
