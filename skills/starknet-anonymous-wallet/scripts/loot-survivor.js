@@ -19,7 +19,7 @@
  * For write modes, private key is loaded from ~/.openclaw/secrets/starknet via accountAddress.
  */
 
-import { Provider, Account, Contract, CallData, shortString } from 'starknet';
+import { Provider, Account, Contract, CallData, shortString, hash } from 'starknet';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 'fs';
 import { join, isAbsolute } from 'path';
 import { homedir } from 'os';
@@ -323,23 +323,30 @@ async function getReceipt(provider, txHash) {
 }
 
 function tryExtractMintedAdventurerIdFromReceipt(receipt) {
-  // Heuristic: look for ERC721 Transfer event that includes tokenId (u256) or felt.
-  // We do NOT assume exact layout; we just scan numeric-looking fields and pick plausible u64.
   if (!receipt || !Array.isArray(receipt.events)) return null;
+  const transferSelector = hash.getSelectorFromName('Transfer');
+  const u64Max = 2n ** 64n - 1n;
   const candidates = [];
 
   for (const ev of receipt.events) {
+    const key0 = String(ev?.keys?.[0] || '');
+    if (!key0) continue;
+    try {
+      if (BigInt(key0) !== BigInt(transferSelector)) continue;
+    } catch {
+      continue;
+    }
+
     const data = ev?.data || [];
     for (const x of data) {
       try {
         const b = BigInt(x);
-        if (b >= 0n && b <= (2n ** 64n - 1n)) candidates.push(b);
+        if (b > 0n && b <= u64Max) candidates.push(b);
       } catch {}
     }
   }
 
-  // Prefer the largest u64-ish value (token ids are usually not tiny like 0/1)
-  candidates.sort((a, b) => (a > b ? -1 : a < b ? 1 : 0));
+  candidates.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   return candidates[0] ? candidates[0].toString() : null;
 }
 
