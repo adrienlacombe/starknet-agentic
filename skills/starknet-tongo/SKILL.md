@@ -135,7 +135,7 @@ await provider.waitForTransaction(response.transaction_hash);
 ```typescript
 const withdrawOp = await tongo.withdraw({
   amount: 25n,
-  to: withdrawalAddress, // Starknet address receiving ERC20
+  to: "0x...", // Starknet address receiving ERC20
   sender: account.address,
   fee_to_sender: 0n,
 });
@@ -148,7 +148,7 @@ await provider.waitForTransaction(response.transaction_hash);
 
 ```typescript
 const ragequitOp = await tongo.ragequit({
-  to: withdrawalAddress,
+  to: "0x...", // Starknet address receiving ERC20
   sender: account.address,
   fee_to_sender: 0n,
 });
