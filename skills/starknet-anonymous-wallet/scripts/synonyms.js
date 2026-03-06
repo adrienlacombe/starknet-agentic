@@ -96,6 +96,12 @@ export function findCanonicalAction(action, abiFunctions = []) {
   const lowerAction = String(action || '').toLowerCase();
   if (!Array.isArray(abiFunctions)) abiFunctions = [];
   if (!lowerAction) return undefined;
+
+  const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const hasBoundaryMatch = (fName, token) => {
+    const re = new RegExp(`(^|_)${esc(token)}(_|$)`);
+    return re.test(fName);
+  };
   
   // 1. Exact match in ABI
   const exactMatch = abiFunctions.find(f => f.toLowerCase() === lowerAction);
@@ -114,13 +120,20 @@ export function findCanonicalAction(action, abiFunctions = []) {
     // Check variant matches
     const variants = ALL_SYNONYMS[canonical] || [];
     for (const variant of [canonical, ...variants]) {
-      const match = abiFunctions.find(f => f.toLowerCase().includes(variant.toLowerCase()));
+      const vName = variant.toLowerCase();
+      const match = abiFunctions.find(f => {
+        const fName = f.toLowerCase();
+        return fName === vName || hasBoundaryMatch(fName, vName);
+      });
       if (match) return match;
     }
   }
   
-  // 3. Partial match in ABI (fallback)
-  return abiFunctions.find(f => f.toLowerCase().includes(lowerAction));
+  // 3. Boundary-safe fallback in ABI
+  return abiFunctions.find(f => {
+    const fName = f.toLowerCase();
+    return fName === lowerAction || hasBoundaryMatch(fName, lowerAction);
+  });
 }
 
 export default {
