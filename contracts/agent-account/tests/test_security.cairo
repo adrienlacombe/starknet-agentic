@@ -15,8 +15,8 @@ use agent_account::interfaces::{
     IAgentAccountDispatcher, IAgentAccountDispatcherTrait, SessionPolicy,
 };
 use agent_account::agent_account::AgentAccount::{
-    APPROVE_SELECTOR, INCREASE_ALLOWANCE_CAMEL_SELECTOR, INCREASE_ALLOWANCE_SELECTOR,
-    TRANSFER_SELECTOR,
+    APPROVE_SELECTOR, DECREASE_ALLOWANCE_CAMEL_SELECTOR, DECREASE_ALLOWANCE_SELECTOR,
+    INCREASE_ALLOWANCE_CAMEL_SELECTOR, INCREASE_ALLOWANCE_SELECTOR, TRANSFER_SELECTOR,
 };
 use snforge_std::{
     ContractClassTrait, DeclareResultTrait, declare, start_cheat_caller_address,
@@ -155,6 +155,24 @@ fn increase_allowance_camel_call(token: ContractAddress, spender: felt252, amoun
     }
 }
 
+/// Build a decrease_allowance call (snake_case): decrease_allowance(spender, subtracted_value)
+fn decrease_allowance_call(token: ContractAddress, spender: felt252, amount: u256) -> Call {
+    Call {
+        to: token,
+        selector: DECREASE_ALLOWANCE_SELECTOR,
+        calldata: array![spender, amount.low.into(), amount.high.into()].span(),
+    }
+}
+
+/// Build a decreaseAllowance call (camelCase): decreaseAllowance(spender, subtractedValue)
+fn decrease_allowance_camel_call(token: ContractAddress, spender: felt252, amount: u256) -> Call {
+    Call {
+        to: token,
+        selector: DECREASE_ALLOWANCE_CAMEL_SELECTOR,
+        calldata: array![spender, amount.low.into(), amount.high.into()].span(),
+    }
+}
+
 /// Build a transfer_from call (snake_case): transfer_from(sender, recipient, amount)
 fn transfer_from_call(
     token: ContractAddress, sender: felt252, recipient: felt252, amount: u256,
@@ -269,6 +287,57 @@ fn test_approve_on_wrong_token_blocked() {
     let wrong_token: ContractAddress = 0xCCC.try_into().unwrap();
     let calls = array![approve_call(wrong_token, 0xDEAD, 50)];
     account.__execute__(calls); // Wrong spending token
+}
+
+#[test]
+#[should_panic(expected: 'Session: approve0 blocked')]
+fn test_approve_zero_is_blocked_for_session_keys() {
+    let owner_kp = KeyPairTrait::from_secret_key(0x1234_felt252);
+    let session_kp = KeyPairTrait::from_secret_key(0x5678_felt252);
+    let (addr, account, agent) = deploy_agent_account(owner_kp.public_key);
+
+    register_key(agent, addr, session_kp.public_key, spending_policy(100));
+
+    let (r, s) = session_kp.sign(TX_HASH).unwrap();
+    setup_session_key_tx(addr, session_kp.public_key, r, s);
+    start_cheat_block_timestamp(addr, 100);
+
+    let calls = array![approve_call(token_addr(), 0xDEAD, 0)];
+    account.__execute__(calls);
+}
+
+#[test]
+#[should_panic(expected: 'Session: approve0 blocked')]
+fn test_validate_rejects_approve_zero_for_session_keys() {
+    let owner_kp = KeyPairTrait::from_secret_key(0x1234_felt252);
+    let session_kp = KeyPairTrait::from_secret_key(0x5678_felt252);
+    let (addr, account, agent) = deploy_agent_account(owner_kp.public_key);
+
+    register_key(agent, addr, session_kp.public_key, spending_policy(100));
+
+    let (r, s) = session_kp.sign(TX_HASH).unwrap();
+    setup_session_key_tx(addr, session_kp.public_key, r, s);
+    start_cheat_block_timestamp(addr, 100);
+
+    let calls = array![approve_call(token_addr(), 0xDEAD, 0)];
+    account.__validate__(calls);
+}
+
+#[test]
+#[should_panic(expected: 'Spending limit exceeded')]
+fn test_validate_rejects_transfer_over_spending_limit() {
+    let owner_kp = KeyPairTrait::from_secret_key(0x1234_felt252);
+    let session_kp = KeyPairTrait::from_secret_key(0x5678_felt252);
+    let (addr, account, agent) = deploy_agent_account(owner_kp.public_key);
+
+    register_key(agent, addr, session_kp.public_key, spending_policy(100));
+
+    let (r, s) = session_kp.sign(TX_HASH).unwrap();
+    setup_session_key_tx(addr, session_kp.public_key, r, s);
+    start_cheat_block_timestamp(addr, 100);
+
+    let calls = array![transfer_call(token_addr(), 0xBEEF, 150)];
+    account.__validate__(calls);
 }
 
 // ===========================================================================
@@ -848,6 +917,225 @@ fn test_transfer_from_camel_is_blocked_for_session_keys() {
 }
 
 #[test]
+#[should_panic(expected: 'Session: decAllowance blocked')]
+fn test_decrease_allowance_snake_is_blocked_for_session_keys() {
+    let owner_kp = KeyPairTrait::from_secret_key(0x1234_felt252);
+    let session_kp = KeyPairTrait::from_secret_key(0x5678_felt252);
+    let (addr, account, agent) = deploy_agent_account(owner_kp.public_key);
+    let mock_token = deploy_mock_erc20();
+
+    let policy = SessionPolicy {
+        valid_after: 0,
+        valid_until: 999_999,
+        spending_limit: 0,
+        spending_token: zero_addr(),
+        allowed_contract: mock_token,
+    };
+    register_key(agent, addr, session_kp.public_key, policy);
+
+    let (r, s) = session_kp.sign(TX_HASH).unwrap();
+    setup_session_key_tx(addr, session_kp.public_key, r, s);
+    start_cheat_block_timestamp(addr, 100);
+
+    let calls = array![decrease_allowance_call(mock_token, 0x1, 1)];
+    account.__execute__(calls);
+}
+
+#[test]
+#[should_panic(expected: 'Session: decAllowance blocked')]
+fn test_decrease_allowance_camel_is_blocked_for_session_keys() {
+    let owner_kp = KeyPairTrait::from_secret_key(0x1234_felt252);
+    let session_kp = KeyPairTrait::from_secret_key(0x5678_felt252);
+    let (addr, account, agent) = deploy_agent_account(owner_kp.public_key);
+    let mock_token = deploy_mock_erc20();
+
+    let policy = SessionPolicy {
+        valid_after: 0,
+        valid_until: 999_999,
+        spending_limit: 0,
+        spending_token: zero_addr(),
+        allowed_contract: mock_token,
+    };
+    register_key(agent, addr, session_kp.public_key, policy);
+
+    let (r, s) = session_kp.sign(TX_HASH).unwrap();
+    setup_session_key_tx(addr, session_kp.public_key, r, s);
+    start_cheat_block_timestamp(addr, 100);
+
+    let calls = array![decrease_allowance_camel_call(mock_token, 0x1, 1)];
+    account.__execute__(calls);
+}
+
+#[test]
+#[should_panic(expected: 'Session: decAllowance blocked')]
+fn test_validate_rejects_decrease_allowance_snake_for_session_keys() {
+    let owner_kp = KeyPairTrait::from_secret_key(0x1234_felt252);
+    let session_kp = KeyPairTrait::from_secret_key(0x5678_felt252);
+    let (addr, account, agent) = deploy_agent_account(owner_kp.public_key);
+    let mock_token = deploy_mock_erc20();
+
+    let policy = SessionPolicy {
+        valid_after: 0,
+        valid_until: 999_999,
+        spending_limit: 0,
+        spending_token: zero_addr(),
+        allowed_contract: mock_token,
+    };
+    register_key(agent, addr, session_kp.public_key, policy);
+
+    let (r, s) = session_kp.sign(TX_HASH).unwrap();
+    setup_session_key_tx(addr, session_kp.public_key, r, s);
+    start_cheat_block_timestamp(addr, 100);
+
+    let calls = array![decrease_allowance_call(mock_token, 0x1, 1)];
+    account.__validate__(calls);
+}
+
+#[test]
+#[should_panic(expected: 'Session: decAllowance blocked')]
+fn test_validate_rejects_decrease_allowance_camel_for_session_keys() {
+    let owner_kp = KeyPairTrait::from_secret_key(0x1234_felt252);
+    let session_kp = KeyPairTrait::from_secret_key(0x5678_felt252);
+    let (addr, account, agent) = deploy_agent_account(owner_kp.public_key);
+    let mock_token = deploy_mock_erc20();
+
+    let policy = SessionPolicy {
+        valid_after: 0,
+        valid_until: 999_999,
+        spending_limit: 0,
+        spending_token: zero_addr(),
+        allowed_contract: mock_token,
+    };
+    register_key(agent, addr, session_kp.public_key, policy);
+
+    let (r, s) = session_kp.sign(TX_HASH).unwrap();
+    setup_session_key_tx(addr, session_kp.public_key, r, s);
+    start_cheat_block_timestamp(addr, 100);
+
+    let calls = array![decrease_allowance_camel_call(mock_token, 0x1, 1)];
+    account.__validate__(calls);
+}
+
+#[test]
+#[should_panic(expected: 'Session: too many calls')]
+fn test_session_key_multicall_count_is_capped() {
+    let owner_kp = KeyPairTrait::from_secret_key(0x1234_felt252);
+    let session_kp = KeyPairTrait::from_secret_key(0x5678_felt252);
+    let (addr, account, agent) = deploy_agent_account(owner_kp.public_key);
+
+    let policy = SessionPolicy {
+        valid_after: 0,
+        valid_until: 999_999,
+        spending_limit: 0,
+        spending_token: zero_addr(),
+        allowed_contract: addr,
+    };
+    register_key(agent, addr, session_kp.public_key, policy);
+
+    let (r, s) = session_kp.sign(TX_HASH).unwrap();
+    setup_session_key_tx(addr, session_kp.public_key, r, s);
+    start_cheat_block_timestamp(addr, 100);
+
+    let mut calls: Array<Call> = ArrayTrait::new();
+    let mut i: u32 = 0;
+    while i < 65 {
+        calls.append(generic_call(addr, selector!("get_active_session_key_count")));
+        i += 1;
+    };
+
+    account.__execute__(calls);
+}
+
+#[test]
+fn test_session_key_multicall_at_cap_succeeds() {
+    let owner_kp = KeyPairTrait::from_secret_key(0x1234_felt252);
+    let session_kp = KeyPairTrait::from_secret_key(0x5678_felt252);
+    let (addr, account, agent) = deploy_agent_account(owner_kp.public_key);
+
+    let policy = SessionPolicy {
+        valid_after: 0,
+        valid_until: 999_999,
+        spending_limit: 0,
+        spending_token: zero_addr(),
+        allowed_contract: addr,
+    };
+    register_key(agent, addr, session_kp.public_key, policy);
+
+    let (r, s) = session_kp.sign(TX_HASH).unwrap();
+    setup_session_key_tx(addr, session_kp.public_key, r, s);
+    start_cheat_block_timestamp(addr, 100);
+
+    let mut calls: Array<Call> = ArrayTrait::new();
+    let mut i: u32 = 0;
+    while i < 64 {
+        calls.append(generic_call(addr, selector!("get_active_session_key_count")));
+        i += 1;
+    };
+
+    let results = account.__execute__(calls);
+    assert_eq!(results.len(), 64);
+}
+
+#[test]
+#[should_panic(expected: 'Session: too many calls')]
+fn test_validate_rejects_session_multicall_count_over_cap() {
+    let owner_kp = KeyPairTrait::from_secret_key(0x1234_felt252);
+    let session_kp = KeyPairTrait::from_secret_key(0x5678_felt252);
+    let (addr, account, agent) = deploy_agent_account(owner_kp.public_key);
+
+    let policy = SessionPolicy {
+        valid_after: 0,
+        valid_until: 999_999,
+        spending_limit: 0,
+        spending_token: zero_addr(),
+        allowed_contract: addr,
+    };
+    register_key(agent, addr, session_kp.public_key, policy);
+
+    let (r, s) = session_kp.sign(TX_HASH).unwrap();
+    setup_session_key_tx(addr, session_kp.public_key, r, s);
+    start_cheat_block_timestamp(addr, 100);
+
+    let mut calls: Array<Call> = ArrayTrait::new();
+    let mut i: u32 = 0;
+    while i < 65 {
+        calls.append(generic_call(addr, selector!("get_active_session_key_count")));
+        i += 1;
+    };
+
+    account.__validate__(calls);
+}
+
+#[test]
+fn test_validate_accepts_session_multicall_at_cap() {
+    let owner_kp = KeyPairTrait::from_secret_key(0x1234_felt252);
+    let session_kp = KeyPairTrait::from_secret_key(0x5678_felt252);
+    let (addr, account, agent) = deploy_agent_account(owner_kp.public_key);
+
+    let policy = SessionPolicy {
+        valid_after: 0,
+        valid_until: 999_999,
+        spending_limit: 0,
+        spending_token: zero_addr(),
+        allowed_contract: addr,
+    };
+    register_key(agent, addr, session_kp.public_key, policy);
+
+    let (r, s) = session_kp.sign(TX_HASH).unwrap();
+    setup_session_key_tx(addr, session_kp.public_key, r, s);
+    start_cheat_block_timestamp(addr, 100);
+
+    let mut calls: Array<Call> = ArrayTrait::new();
+    let mut i: u32 = 0;
+    while i < 64 {
+        calls.append(generic_call(addr, selector!("get_active_session_key_count")));
+        i += 1;
+    };
+
+    assert_eq!(account.__validate__(calls), starknet::VALIDATED);
+}
+
+#[test]
 #[should_panic(expected: 'Spending limit exceeded')]
 fn test_u256_high_limb_spending_limit_enforced() {
     // Ensure u256 allowance math is correct when amount.high > 0.
@@ -1122,5 +1410,15 @@ fn test_selector_constants_match_sn_keccak() {
         INCREASE_ALLOWANCE_CAMEL_SELECTOR,
         selector!("increaseAllowance"),
         "INCREASE_ALLOWANCE_CAMEL_SELECTOR mismatch",
+    );
+    assert_eq!(
+        DECREASE_ALLOWANCE_SELECTOR,
+        selector!("decrease_allowance"),
+        "DECREASE_ALLOWANCE_SELECTOR mismatch",
+    );
+    assert_eq!(
+        DECREASE_ALLOWANCE_CAMEL_SELECTOR,
+        selector!("decreaseAllowance"),
+        "DECREASE_ALLOWANCE_CAMEL_SELECTOR mismatch",
     );
 }

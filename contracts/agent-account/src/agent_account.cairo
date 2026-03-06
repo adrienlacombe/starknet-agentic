@@ -83,11 +83,23 @@ pub mod AgentAccount {
     pub const INCREASE_ALLOWANCE_CAMEL_SELECTOR: felt252 =
         0x16cc063b8338363cf388ce7fe1df408bf10f16cd51635d392e21d852fafb683;
 
+    /// ERC-20 `decrease_allowance(spender, subtracted_value)` selector (snake_case).
+    pub const DECREASE_ALLOWANCE_SELECTOR: felt252 =
+        selector!("decrease_allowance");
+
+    /// OZ ERC-20 `decreaseAllowance(spender, subtractedValue)` selector (camelCase).
+    pub const DECREASE_ALLOWANCE_CAMEL_SELECTOR: felt252 =
+        selector!("decreaseAllowance");
+
     /// ERC-20 `transfer_from(sender, recipient, amount)` selector (snake_case).
     pub const TRANSFER_FROM_SELECTOR: felt252 = selector!("transfer_from");
 
     /// ERC-20 `transferFrom(sender, recipient, amount)` selector (camelCase).
     pub const TRANSFER_FROM_CAMEL_SELECTOR: felt252 = selector!("transferFrom");
+
+    /// Session-key multicall cap to bound worst-case execution/griefing.
+    /// Owner signatures (2-felt) are intentionally not capped.
+    pub const MAX_SESSION_KEY_CALLS_PER_TX: u32 = 64;
 
     /// Returns true if the selector corresponds to an ERC-20 operation that
     /// moves or authorizes moving value: transfer, approve, increase_allowance.
@@ -103,6 +115,12 @@ pub mod AgentAccount {
     /// can consume pre-existing approvals and bypass per-key spending intent.
     fn is_blocked_transfer_from_selector(sel: felt252) -> bool {
         sel == TRANSFER_FROM_SELECTOR || sel == TRANSFER_FROM_CAMEL_SELECTOR
+    }
+
+    /// decrease_allowance / decreaseAllowance are blocked for session keys:
+    /// they can grief owner-managed allowances without moving value.
+    fn is_blocked_decrease_allowance_selector(sel: felt252) -> bool {
+        sel == DECREASE_ALLOWANCE_SELECTOR || sel == DECREASE_ALLOWANCE_CAMEL_SELECTOR
     }
 
     /// Admin selectors that a session key must never execute, even if
@@ -289,6 +307,8 @@ pub mod AgentAccount {
             if signature.len() == 3 {
                 // Session key path: [session_key_pubkey, r, s]
                 let session_key = *signature.at(0);
+                let policy = self.session_keys.get_policy(session_key);
+                let zero_addr: ContractAddress = 0.try_into().unwrap();
 
                 // Key must be registered, active, and within its time window
                 assert(self.session_keys.is_valid(session_key), 'Session key not valid');
@@ -300,6 +320,65 @@ pub mod AgentAccount {
                     ),
                     'Session key: bad signature',
                 );
+
+                // Mirror static policy guards here so invalid session multicalls
+                // are rejected during validation (before execution-time fees).
+                let calls_span = calls.span();
+                assert(
+                    calls_span.len() <= MAX_SESSION_KEY_CALLS_PER_TX,
+                    'Session: too many calls',
+                );
+
+                let mut i: u32 = 0;
+                loop {
+                    if i >= calls_span.len() {
+                        break;
+                    }
+                    let call = calls_span.at(i);
+                    let selector = *call.selector;
+
+                    assert(!is_admin_selector(selector), 'Session: admin selector blocked');
+                    assert(
+                        !is_blocked_transfer_from_selector(selector),
+                        'Session: transferFrom blocked',
+                    );
+                    assert(
+                        !is_blocked_decrease_allowance_selector(selector),
+                        'Session: decAllowance blocked',
+                    );
+
+                    if policy.allowed_contract != zero_addr {
+                        assert(
+                            *call.to == policy.allowed_contract,
+                            'Session: contract not allowed',
+                        );
+                    }
+
+                    if is_spending_selector(selector) {
+                        let calldata = *call.calldata;
+                        assert(calldata.len() >= 3, 'Session: bad transfer data');
+
+                        let amount_low: u128 = (*calldata.at(1))
+                            .try_into()
+                            .expect('bad amount_low');
+                        let amount_high: u128 = (*calldata.at(2))
+                            .try_into()
+                            .expect('bad amount_high');
+                        let amount = u256 { low: amount_low, high: amount_high };
+                        let amount_is_zero = amount_low == 0 && amount_high == 0;
+
+                        if selector == APPROVE_SELECTOR {
+                            assert(!amount_is_zero, 'Session: approve0 blocked');
+                        }
+
+                        // __validate__ cannot mutate rolling spending counters,
+                        // but it can reject calls that exceed the per-call cap.
+                        assert(amount <= policy.spending_limit, 'Spending limit exceeded');
+                        assert(*call.to == policy.spending_token, 'Wrong spending token');
+                    }
+
+                    i += 1;
+                };
 
                 return starknet::VALIDATED;
             }
@@ -337,6 +416,10 @@ pub mod AgentAccount {
                 let zero_addr: ContractAddress = 0.try_into().unwrap();
 
                 let calls_span = calls.span();
+                assert(
+                    calls_span.len() <= MAX_SESSION_KEY_CALLS_PER_TX,
+                    'Session: too many calls',
+                );
                 let mut i: u32 = 0;
                 loop {
                     if i >= calls_span.len() {
@@ -349,6 +432,10 @@ pub mod AgentAccount {
                     assert(
                         !is_blocked_transfer_from_selector(selector),
                         'Session: transferFrom blocked',
+                    );
+                    assert(
+                        !is_blocked_decrease_allowance_selector(selector),
+                        'Session: decAllowance blocked',
                     );
 
                     // Enforce allowed_contract policy (zero = any contract allowed)
@@ -372,6 +459,11 @@ pub mod AgentAccount {
                             .try_into()
                             .expect('bad amount_high');
                         let amount = u256 { low: amount_low, high: amount_high };
+                        let amount_is_zero = amount_low == 0 && amount_high == 0;
+
+                        if selector == APPROVE_SELECTOR {
+                            assert(!amount_is_zero, 'Session: approve0 blocked');
+                        }
 
                         // call.to is the token contract address
                         self
@@ -395,6 +487,7 @@ pub mod AgentAccount {
             self: @ContractState, hash: felt252, signature: Array<felt252>,
         ) -> felt252 {
             if self.account._is_valid_signature(hash, signature.span()) {
+                // `starknet::VALIDATED` is the SNIP-6 magic value `'VALID'`.
                 starknet::VALIDATED
             } else {
                 0
