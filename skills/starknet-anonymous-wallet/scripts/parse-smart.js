@@ -508,8 +508,9 @@ async function main() {
     const looksHexButTooShort = !!(toCandidate && /^0x[0-9a-fA-F]+$/.test(toCandidate) && toCandidate.length < (2 + MIN_RECIPIENT_HEX_LEN));
     const hasInvalidRecipient = !!(toCandidate && (!exactRecipientRegex.test(toCandidate) || looksHexButTooShort));
 
-    // Amount: first decimal/integer number
-    const amountMatch = prompt.match(/\b\d+(?:\.\d+)?\b/);
+    // Amount: first decimal/integer number (ignore digits inside 0x... addresses)
+    const promptWithoutHex = prompt.replace(/0x[0-9a-fA-F]+/g, ' ');
+    const amountMatch = promptWithoutHex.match(/\b\d+(?:\.\d+)?\b/);
     const amount = amountMatch ? amountMatch[0] : null;
 
     // Token: from extracted tokens; fallback to uppercase word heuristic
