@@ -625,7 +625,7 @@ async function main() {
       orchestration: [{ step: 0, name: "Using LLM-parsed data" }]
     };
     
-    const { operations, operationType, abis, addresses } = parsed;
+    const { operations = [], operationType, abis = {}, addresses = {} } = parsed || {};
     
     result.parsed = parsed;
     result.operationType = operationType;
