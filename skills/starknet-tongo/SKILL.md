@@ -18,8 +18,15 @@ Confidential ERC20 payments on Starknet using the [Tongo protocol](https://githu
 npm install @fatsolutions/tongo-sdk starknet@^9.2.1
 ```
 
-Environment variables:
+To run the demo script (`scripts/demo-e2e.ts`):
+
+```bash
+npm install dotenv && npm install -D tsx
 ```
+
+Environment variables:
+
+```dotenv
 STARKNET_RPC_URL=https://starknet-mainnet.g.alchemy.com/v2/YOUR_KEY
 STARKNET_ACCOUNT_ADDRESS=0x...
 STARKNET_PRIVATE_KEY=0x...
