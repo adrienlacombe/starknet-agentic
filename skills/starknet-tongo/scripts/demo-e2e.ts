@@ -15,11 +15,11 @@
 
 import "dotenv/config";
 import { Account as TongoAccount } from "@fatsolutions/tongo-sdk";
-import { Account, RpcProvider } from "starknet";
+import { Account, RpcProvider, TransactionExecutionStatus } from "starknet";
 
 async function waitSuccess(provider: RpcProvider, txHash: string) {
   const receipt = await provider.waitForTransaction(txHash);
-  if (receipt.execution_status === "REVERTED") {
+  if (receipt.execution_status === TransactionExecutionStatus.REVERTED) {
     throw new Error(`Transaction reverted: ${receipt.revert_reason}`);
   }
   return receipt;
