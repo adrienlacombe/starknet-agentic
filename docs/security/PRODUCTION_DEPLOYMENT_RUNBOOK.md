@@ -1,0 +1,138 @@
+# Production Deployment Runbook (AgentAccountFactory + SessionAccount)
+
+This runbook is the canonical procedure for production deployment operations in
+the no-backend launch profile.
+
+## Scope
+
+- AgentAccount class declaration
+- AgentAccountFactory declaration/deployment
+- SessionAccount production deployment path
+- Post-deploy verification and rollback
+
+## Preconditions
+
+- `docs/DEPLOYMENT_TRUTH_SHEET.md` reviewed and current.
+- Ownership policy approved in
+  `docs/security/MAINNET_OWNERSHIP_SIGNER_POLICY.md`.
+- Latest `main` CI is green for contracts and security workflows.
+- Deployment actor has funded mainnet account + signer rights.
+
+## Required Inputs
+
+```bash
+export RPC_URL="<starknet-mainnet-rpc>"
+export DEPLOYER_ACCOUNT="<account_address>"
+export DEPLOYER_PK="<private_key_or_signer_reference>"
+
+export IDENTITY_REGISTRY="<identity_registry_addr>"
+export REPUTATION_REGISTRY="<reputation_registry_addr>"
+export VALIDATION_REGISTRY="<validation_registry_addr>"
+export FACTORY_OWNER="<multisig_owner_addr>"
+```
+
+## Step 1: Build and Class Hash Verification
+
+```bash
+scarb build
+starkli class-hash contracts/agent-account/target/dev/agent_account_AgentAccount.contract_class.json
+starkli class-hash contracts/agent-account/target/dev/agent_account_AgentAccountFactory.contract_class.json
+```
+
+Record hashes and attach to issue evidence.
+
+## Step 2: Declare Classes (Mainnet)
+
+```bash
+starkli declare contracts/agent-account/target/dev/agent_account_AgentAccount.contract_class.json \
+  --rpc "$RPC_URL" --account "$DEPLOYER_ACCOUNT" --private-key "$DEPLOYER_PK"
+
+starkli declare contracts/agent-account/target/dev/agent_account_AgentAccountFactory.contract_class.json \
+  --rpc "$RPC_URL" --account "$DEPLOYER_ACCOUNT" --private-key "$DEPLOYER_PK"
+```
+
+Record resulting class hashes and tx hashes.
+
+## Step 3: Deploy AgentAccountFactory
+
+Constructor parameters must bind to the intended registry set and owner:
+
+- `owner = FACTORY_OWNER`
+- `identity_registry = IDENTITY_REGISTRY`
+- `account_class_hash = <declared_agent_account_class_hash>`
+
+Example:
+
+```bash
+starkli deploy <agent_account_factory_class_hash> \
+  "$FACTORY_OWNER" \
+  "$IDENTITY_REGISTRY" \
+  "<agent_account_class_hash>" \
+  --rpc "$RPC_URL" --account "$DEPLOYER_ACCOUNT" --private-key "$DEPLOYER_PK"
+```
+
+## Step 4: Runtime Verification
+
+```bash
+starkli call <factory_address> get_owner --rpc "$RPC_URL"
+starkli call <factory_address> get_identity_registry --rpc "$RPC_URL"
+starkli call <factory_address> get_account_class_hash --rpc "$RPC_URL"
+```
+
+Acceptance checks:
+
+- `get_owner == FACTORY_OWNER`
+- `get_identity_registry == IDENTITY_REGISTRY` (must not point to legacy set)
+- `get_account_class_hash` matches declared AgentAccount class hash
+
+## Step 5: SessionAccount Production Path
+
+SessionAccount rollout options:
+
+1. Factory-based account creation in production flows (preferred)
+2. Direct SessionAccount deploy only for controlled migrations
+
+Required controls:
+
+- perform at least one Sepolia dry run before mainnet action
+- record tx hashes, constructor args, and owner verification output
+- verify spending policy enforcement paths before broad traffic
+
+## Step 6: Post-Deploy Smoke Checks
+
+- [ ] create one test account via factory path
+- [ ] validate session-key registration and revocation flow
+- [ ] run one allowed transfer and one policy-denied transfer
+- [ ] confirm audit logs/evidence links in issue tracker
+
+## Rollback
+
+Trigger rollback if:
+
+- wrong owner or wrong registry binding detected
+- declared/deployed class hash mismatch
+- critical verification checks fail
+
+Rollback actions:
+
+1. halt new account creation flow
+2. transfer owner to recovery multisig if needed
+3. redeploy factory with correct constructor bindings
+4. update canonical truth sheet and incident notes
+
+## Evidence Package (Mandatory)
+
+Attach all of the following to the tracking issue:
+
+- declaration tx hashes
+- deployment tx hash + deployed address
+- command outputs for `get_owner/get_identity_registry/get_account_class_hash`
+- smoke-test output links
+- residual risk note
+
+## Tracking
+
+This runbook is evidence for:
+
+- `#333` production deployment runbook
+- `#273` no-backend launch gate
