@@ -545,8 +545,13 @@ class SmartEventWatcher {
     this.processedTxs.add(txKey);
     
     if (this.processedTxs.size > 10000) {
-      const iter = this.processedTxs.values();
-      this.processedTxs.delete(iter.next().value);
+      const entriesToRemove = this.processedTxs.size - 9000;
+      let removed = 0;
+      for (const key of this.processedTxs.keys()) {
+        if (removed >= entriesToRemove) break;
+        this.processedTxs.delete(key);
+        removed++;
+      }
     }
 
     const eventData = {
