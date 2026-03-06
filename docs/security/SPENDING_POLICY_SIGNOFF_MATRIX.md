@@ -55,8 +55,7 @@ SP-05 evidence requirements:
 
 ```bash
 # SP-06: policy-denied transfer (exceeds per-call limit)
-starkli invoke "$SESSION_ACCOUNT_ADDR" \
-  "$ERC20_TOKEN_ADDR" transfer "$RECIPIENT_ADDR" u256:99999999999 \
+starkli invoke "$ERC20_TOKEN_ADDR" transfer "$RECIPIENT_ADDR" u256:99999999999 \
   --rpc "$SEPOLIA_RPC_URL" \
   --account "$SESSION_ACCOUNT_ADDR" \
   --keystore "$SESSION_KEY_KEYSTORE_PATH"
@@ -69,8 +68,7 @@ start_time=$(date +%s)
 success=0
 failed=0
 for i in $(seq 1 100); do
-  starkli invoke "$SESSION_ACCOUNT_ADDR" \
-    "$ERC20_TOKEN_ADDR" transfer "$RECIPIENT_ADDR" u256:1 \
+  starkli invoke "$ERC20_TOKEN_ADDR" transfer "$RECIPIENT_ADDR" u256:1 \
     --rpc "$SEPOLIA_RPC_URL" \
     --account "$SESSION_ACCOUNT_ADDR" \
     --keystore "$SESSION_KEY_KEYSTORE_PATH" \
@@ -80,7 +78,7 @@ end_time=$(date +%s)
 elapsed=$((end_time - start_time))
 [ "$elapsed" -le 0 ] && elapsed=1
 total=$((success + failed))
-tx_per_hour=$((total * 3600 / elapsed))
+tx_count_per_hour=$((total * 3600 / elapsed))
 if [ "$total" -gt 0 ]; then
   success_rate=$((success * 100 / total))
   failure_rate=$((failed * 100 / total))
@@ -88,8 +86,8 @@ else
   success_rate=0
   failure_rate=0
 fi
-echo "success=$success failed=$failed total=$total elapsed_seconds=$elapsed tx_per_hour=$tx_per_hour success_rate_pct=$success_rate failure_rate_pct=$failure_rate"
-# include tx_count/hour, success_rate, failure_rate, and elapsed_seconds in evidence bundle
+echo "success=$success failed=$failed total=$total elapsed_seconds=$elapsed tx_count_per_hour=$tx_count_per_hour success_rate_pct=$success_rate failure_rate_pct=$failure_rate"
+# include tx_count_per_hour, success_rate_pct, failure_rate_pct, and elapsed_seconds in evidence bundle
 ```
 
 ## Tracking

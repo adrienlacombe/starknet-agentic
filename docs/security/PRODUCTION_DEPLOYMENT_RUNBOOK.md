@@ -100,31 +100,69 @@ Use one signer flow only:
 - keystore (recommended):
 
 ```bash
-DECLARED_AGENT_ACCOUNT_CLASS_HASH="$(
+declare_agent_output="$(
   starkli declare contracts/agent-account/target/release/agent_account_AgentAccount.contract_class.json \
     --rpc "$RPC_URL" --account "$DEPLOYER_ACCOUNT" --keystore "$KEYSTORE_PATH" \
-    | awk '/class hash/{print $NF}'
+    2>&1
 )"
-DECLARED_FACTORY_CLASS_HASH="$(
+printf '%s\n' "$declare_agent_output"
+DECLARED_AGENT_ACCOUNT_CLASS_HASH="$(
+  printf '%s\n' "$declare_agent_output" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed -nE 's/.*class hash[^0-9a-f]*(0x[0-9a-f]+).*/\1/p' \
+    | tail -n 1
+)"
+test -n "$DECLARED_AGENT_ACCOUNT_CLASS_HASH" \
+  || { echo "Failed to parse AgentAccount class hash from declare output"; exit 1; }
+
+declare_factory_output="$(
   starkli declare contracts/agent-account/target/release/agent_account_AgentAccountFactory.contract_class.json \
     --rpc "$RPC_URL" --account "$DEPLOYER_ACCOUNT" --keystore "$KEYSTORE_PATH" \
-    | awk '/class hash/{print $NF}'
+    2>&1
 )"
+printf '%s\n' "$declare_factory_output"
+DECLARED_FACTORY_CLASS_HASH="$(
+  printf '%s\n' "$declare_factory_output" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed -nE 's/.*class hash[^0-9a-f]*(0x[0-9a-f]+).*/\1/p' \
+    | tail -n 1
+)"
+test -n "$DECLARED_FACTORY_CLASS_HASH" \
+  || { echo "Failed to parse Factory class hash from declare output"; exit 1; }
 ```
 
 - hardware wallet:
 
 ```bash
-DECLARED_AGENT_ACCOUNT_CLASS_HASH="$(
+declare_agent_output="$(
   starkli declare contracts/agent-account/target/release/agent_account_AgentAccount.contract_class.json \
     --rpc "$RPC_URL" --account "$DEPLOYER_ACCOUNT" --ledger \
-    | awk '/class hash/{print $NF}'
+    2>&1
 )"
-DECLARED_FACTORY_CLASS_HASH="$(
+printf '%s\n' "$declare_agent_output"
+DECLARED_AGENT_ACCOUNT_CLASS_HASH="$(
+  printf '%s\n' "$declare_agent_output" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed -nE 's/.*class hash[^0-9a-f]*(0x[0-9a-f]+).*/\1/p' \
+    | tail -n 1
+)"
+test -n "$DECLARED_AGENT_ACCOUNT_CLASS_HASH" \
+  || { echo "Failed to parse AgentAccount class hash from declare output"; exit 1; }
+
+declare_factory_output="$(
   starkli declare contracts/agent-account/target/release/agent_account_AgentAccountFactory.contract_class.json \
     --rpc "$RPC_URL" --account "$DEPLOYER_ACCOUNT" --ledger \
-    | awk '/class hash/{print $NF}'
+    2>&1
 )"
+printf '%s\n' "$declare_factory_output"
+DECLARED_FACTORY_CLASS_HASH="$(
+  printf '%s\n' "$declare_factory_output" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed -nE 's/.*class hash[^0-9a-f]*(0x[0-9a-f]+).*/\1/p' \
+    | tail -n 1
+)"
+test -n "$DECLARED_FACTORY_CLASS_HASH" \
+  || { echo "Failed to parse Factory class hash from declare output"; exit 1; }
 ```
 
 Do not use `--private-key` for production operations.
@@ -155,8 +193,8 @@ Example:
 keystore:
 
 ```bash
-starkli deploy "$COMPUTED_FACTORY_CLASS_HASH" \
-  "$COMPUTED_AGENT_ACCOUNT_CLASS_HASH" \
+starkli deploy "$DECLARED_FACTORY_CLASS_HASH" \
+  "$DECLARED_AGENT_ACCOUNT_CLASS_HASH" \
   "$IDENTITY_REGISTRY" \
   --rpc "$RPC_URL" --account "$DEPLOYER_ACCOUNT" --keystore "$KEYSTORE_PATH"
 ```
@@ -164,8 +202,8 @@ starkli deploy "$COMPUTED_FACTORY_CLASS_HASH" \
 hardware wallet:
 
 ```bash
-starkli deploy "$COMPUTED_FACTORY_CLASS_HASH" \
-  "$COMPUTED_AGENT_ACCOUNT_CLASS_HASH" \
+starkli deploy "$DECLARED_FACTORY_CLASS_HASH" \
+  "$DECLARED_AGENT_ACCOUNT_CLASS_HASH" \
   "$IDENTITY_REGISTRY" \
   --rpc "$RPC_URL" --account "$DEPLOYER_ACCOUNT" --ledger
 ```
