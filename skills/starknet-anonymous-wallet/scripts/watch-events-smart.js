@@ -540,7 +540,8 @@ class SmartEventWatcher {
 
   // Handle events from either source
   handleEvent(event, source) {
-    const txKey = `${event.transaction_hash || event.transactionHash}_${event.keys.join('_')}`;
+    const keys = Array.isArray(event?.keys) ? event.keys : [];
+    const txKey = `${event.transaction_hash || event.transactionHash}_${keys.join('_')}`;
     if (this.processedTxs.has(txKey)) return;
     this.processedTxs.add(txKey);
     
@@ -561,9 +562,9 @@ class SmartEventWatcher {
       blockNumber: event.block_number || event.blockNumber,
       transactionHash: event.transaction_hash || event.transactionHash,
       contractAddress: event.from_address || event.contractAddress,
-      keys: event.keys,
+      keys,
       data: event.data,
-      eventName: this.getEventName(event.keys[0])
+      eventName: this.getEventName(keys[0])
     };
     
     logEvent(eventData);
