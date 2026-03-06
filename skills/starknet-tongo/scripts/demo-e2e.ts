@@ -87,6 +87,8 @@ async function main() {
   console.log(`  Receiver pending: ${state.pending}`);
 
   // --- 3. Rollover ---
+  // NOTE: In production, receiver would have their own Starknet account for gas.
+  // This demo reuses `account` for simplicity (test-only pattern).
   console.log("\n[3/4] Rolling over receiver's pending balance...");
   const rolloverOp = await receiver.rollover({ sender: account.address });
   tx = await account.execute(rolloverOp.toCalldata());
