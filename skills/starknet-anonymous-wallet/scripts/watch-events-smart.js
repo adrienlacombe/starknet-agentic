@@ -38,14 +38,11 @@ const DEFAULT_WEBHOOK_TIMEOUT_MS = 5000;
 const MAX_BLOCKS_PER_CYCLE = 200;
 const DEFAULT_WS_RECOVERY_COOLDOWN_MS = 5 * 60 * 1000;
 
-let currentMode = 'initializing'; // 'websocket', 'polling', 'initializing'
-let isShuttingDown = false;
-
-function log(message, type = 'info') {
+function log(message, type = 'info', mode = 'unknown') {
   console.log(JSON.stringify({
     timestamp: new Date().toISOString(),
     type,
-    mode: currentMode,
+    mode,
     message
   }));
 }
@@ -159,6 +156,8 @@ class SmartEventWatcher {
     this.contractAddress = config.contractAddress;
     this.eventNames = config.eventNames || [];
     this.forcedMode = config.mode || 'auto'; // 'auto', 'websocket', 'polling'
+    this.currentMode = 'initializing';
+    this.isShuttingDown = false;
     
     // WebSocket state
     this.ws = null;
@@ -318,9 +317,9 @@ class SmartEventWatcher {
 
   // Try to connect via WebSocket
   async tryWebSocket() {
-    if (isShuttingDown) return;
+    if (this.isShuttingDown) return;
     
-    currentMode = 'websocket';
+    this.currentMode = 'websocket';
     log('Attempting WebSocket connection...');
 
     return new Promise((resolve) => {
@@ -416,7 +415,7 @@ class SmartEventWatcher {
 
       this.ws.on('close', () => {
         this.wsIsConnected = false;
-        if (currentMode === 'websocket' && !isShuttingDown) {
+        if (this.currentMode === 'websocket' && !this.isShuttingDown) {
           log('WebSocket disconnected unexpectedly', 'warn');
           this.handleWebSocketFailure('disconnected');
         }
@@ -457,10 +456,10 @@ class SmartEventWatcher {
 
   // Start HTTP polling
   async startPolling() {
-    if (isShuttingDown) return;
+    if (this.isShuttingDown) return;
     if (this.isPolling) return;
     
-    currentMode = 'polling';
+    this.currentMode = 'polling';
     this.isPolling = true;
     log('Starting HTTP polling mode...');
     log(`Poll interval: ${this.pollIntervalMs}ms`);
@@ -487,7 +486,7 @@ class SmartEventWatcher {
   }
 
   async poll() {
-    if (!this.isPolling || isShuttingDown) return;
+    if (!this.isPolling || this.isShuttingDown) return;
     
     try {
       const latestBlock = await this.provider.getBlock('latest');
@@ -584,16 +583,16 @@ class SmartEventWatcher {
   // Health check - monitor both modes and recover if needed
   startHealthCheck() {
     this.healthCheckTimer = setInterval(() => {
-      if (isShuttingDown) return;
+      if (this.isShuttingDown) return;
       
-      if (currentMode === 'websocket') {
+      if (this.currentMode === 'websocket') {
         // Check if WebSocket is still healthy
         if (!this.wsIsConnected) {
           log('Health check: WebSocket not connected', 'warn');
           this.handleWebSocketFailure('health_check');
         }
         // Could also check last event time and fallback if no events for too long
-      } else if (currentMode === 'polling') {
+      } else if (this.currentMode === 'polling') {
         // In auto mode, periodically try to recover WebSocket
         if (this.forcedMode !== 'auto') return;
 
@@ -620,7 +619,7 @@ class SmartEventWatcher {
   }
 
   stop() {
-    isShuttingDown = true;
+    this.isShuttingDown = true;
     log('Shutting down...');
     
     if (this.healthCheckTimer) {
