@@ -91,6 +91,17 @@ test("createReportTemplate includes all required checks with pending status", ()
   }
 });
 
+test("createReportTemplate rejects non-ISO UTC generatedAt formats", () => {
+  assert.throws(
+    () => createReportTemplate({ runId: "sp-test", generatedAt: "2026-03-06" }),
+    /ISO-8601 UTC/i,
+  );
+  assert.throws(
+    () => createReportTemplate({ runId: "sp-test", generatedAt: "March 6, 2026" }),
+    /ISO-8601 UTC/i,
+  );
+});
+
 test("verifySpendingPolicyReport fails when a required check is missing", () => {
   const report = createReportTemplate({ runId: "sp-test", generatedAt: "2026-03-06T00:00:00.000Z" });
   report.checks = report.checks.filter((entry) => entry.checkId !== CHECK_IDS[0]);
@@ -115,8 +126,9 @@ test("verifySpendingPolicyReport fails when a pass check has no evidence", () =>
   );
 });
 
-test("verifySpendingPolicyReport rejects path traversal in evidence paths", () => {
+test("verifySpendingPolicyReport rejects path traversal in evidence paths", (t) => {
   const bundleDir = makeTempDir();
+  t.after(() => fs.rmSync(bundleDir, { recursive: true, force: true }));
   const report = createReportTemplate({ runId: "sp-test", generatedAt: "2026-03-06T00:00:00.000Z" });
   report.checks = report.checks.map((entry, index) =>
     index === 0
@@ -137,12 +149,11 @@ test("verifySpendingPolicyReport rejects path traversal in evidence paths", () =
     () => verifySpendingPolicyReport(report, { bundleDir }),
     /safe relative path/i,
   );
-
-  fs.rmSync(bundleDir, { recursive: true, force: true });
 });
 
-test("verifySpendingPolicyReport rejects Windows absolute evidence paths", () => {
+test("verifySpendingPolicyReport rejects Windows absolute evidence paths", (t) => {
   const bundleDir = makeTempDir();
+  t.after(() => fs.rmSync(bundleDir, { recursive: true, force: true }));
   const report = createReportTemplate({ runId: "sp-test", generatedAt: "2026-03-06T00:00:00.000Z" });
   report.checks = report.checks.map((entry, index) =>
     index === 0
@@ -163,8 +174,6 @@ test("verifySpendingPolicyReport rejects Windows absolute evidence paths", () =>
     () => verifySpendingPolicyReport(report, { bundleDir }),
     /safe relative path/i,
   );
-
-  fs.rmSync(bundleDir, { recursive: true, force: true });
 });
 
 test("verifySpendingPolicyReport fails on duplicate checkId", () => {

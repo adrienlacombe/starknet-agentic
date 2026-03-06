@@ -73,6 +73,7 @@ const ALLOWED_CHECK_STATUSES = new Set([
 const ALLOWED_SIGNOFF_STATUSES = new Set(["pending", "approved", "rejected"]);
 const ALLOWED_EVIDENCE_TYPES = new Set(["tx", "log", "report", "screenshot", "other"]);
 const REQUIRED_SIGNOFF_KEYS = ["leadDeveloper", "securityReviewer", "qaEngineer"];
+const STRICT_ISO_UTC_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 function fail(message) {
   throw new Error(message);
@@ -92,11 +93,14 @@ function parseBooleanFlag(value) {
 
 function validateIsoDate(value, label) {
   if (!isNonEmptyString(value)) {
-    fail(`${label} must be a non-empty string`);
+    fail(`${label} must be a non-empty ISO-8601 UTC string`);
+  }
+  if (!STRICT_ISO_UTC_RE.test(value)) {
+    fail(`${label} must be a valid ISO-8601 UTC string (YYYY-MM-DDTHH:mm:ss.sssZ)`);
   }
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    fail(`${label} must be a valid ISO date string`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString() !== value) {
+    fail(`${label} must be a valid ISO-8601 UTC string (YYYY-MM-DDTHH:mm:ss.sssZ)`);
   }
 }
 
