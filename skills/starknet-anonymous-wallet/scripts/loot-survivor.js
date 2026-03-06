@@ -20,10 +20,11 @@
  */
 
 import { Provider, Account, Contract, CallData, shortString, hash } from 'starknet';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync, rmSync } from 'fs';
-import { join, isAbsolute } from 'path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, rmSync } from 'fs';
+import { join } from 'path';
 import { homedir } from 'os';
 import { resolveRpcUrl } from './_rpc.js';
+import { loadPrivateKeyByAccountAddress } from './_keys.js';
 
 
 // Loot Survivor (Death Mountain) mainnet addresses (docs)
@@ -141,45 +142,6 @@ function savePersistedAdventurerId(accountAddress, adventurerId) {
 function fail(message, extra = {}) {
   console.error(JSON.stringify({ success: false, error: message, ...extra }));
   process.exit(1);
-}
-
-function getSecretsDir() {
-  return join(homedir(), '.openclaw', 'secrets', 'starknet');
-}
-
-function loadPrivateKeyByAccountAddress(accountAddress) {
-  const dir = getSecretsDir();
-  if (!existsSync(dir)) fail('Missing secrets directory: ~/.openclaw/secrets/starknet');
-
-  const files = readdirSync(dir).filter(f => f.endsWith('.json'));
-  const target = String(accountAddress).toLowerCase();
-
-  for (const file of files) {
-    const accountPath = join(dir, file);
-    let data;
-    try {
-      data = JSON.parse(readFileSync(accountPath, 'utf8'));
-    } catch {
-      continue;
-    }
-
-    if (String(data.address || '').toLowerCase() !== target) continue;
-
-    if (!(typeof data.privateKeyPath === 'string' && data.privateKeyPath.trim().length > 0)) {
-      fail('Account is missing privateKeyPath (file-based key is required).');
-    }
-
-    const keyPath = isAbsolute(data.privateKeyPath)
-      ? data.privateKeyPath
-      : join(dir, data.privateKeyPath);
-
-    if (!existsSync(keyPath)) fail(`Private key file not found: ${keyPath}`);
-    const privateKey = readFileSync(keyPath, 'utf8').trim();
-    if (!privateKey) fail('Private key file is empty.');
-    return privateKey;
-  }
-
-  fail(`Account not found in ~/.openclaw/secrets/starknet for address: ${accountAddress}`);
 }
 
 function parseJsonArg() {
@@ -404,7 +366,12 @@ async function main() {
   const accountAddress = input.accountAddress;
   if (!accountAddress) fail('Missing accountAddress for write mode');
   if (input.privateKey) fail('Do not pass privateKey in JSON input.');
-  const privateKey = loadPrivateKeyByAccountAddress(accountAddress);
+  let privateKey;
+  try {
+    privateKey = loadPrivateKeyByAccountAddress(accountAddress);
+  } catch (e) {
+    fail(e.message || String(e));
+  }
 
   const account = new Account({
     provider,
