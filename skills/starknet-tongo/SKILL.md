@@ -181,21 +181,24 @@ An optional auditor can decrypt all transaction amounts for compliance:
 import { Auditor } from "@fatsolutions/tongo-sdk";
 
 const auditor = new Auditor(
-  auditorPrivateKey,
+  process.env.TONGO_AUDITOR_PRIVATE_KEY,
   process.env.TONGO_CONTRACT_ADDRESS,
   provider,
 );
 
+// Tongo address of the user to audit (Base58, shared publicly by the user)
+const userTongoAddress = "Base58EncodedTongoAddressOfUser";
+
 // Get user balance
-const balance = await auditor.getUserBalance(0, userPublicKey);
+const balance = await auditor.getUserBalance(0, userTongoAddress);
 console.log("Declared balance:", balance.amount);
 
 // Get transfer history
-const transfers = await auditor.getUserTransferOut(0, userPublicKey);
+const transfers = await auditor.getUserTransferOut(0, userTongoAddress);
 transfers.forEach(t => console.log(`Transferred ${t.amount} to ${t.to}`));
 
 // Get real balance including pending
-const realBalance = await auditor.getRealuserBalance(0, userPublicKey);
+const realBalance = await auditor.getRealuserBalance(0, userTongoAddress);
 ```
 
 ## Transaction History
