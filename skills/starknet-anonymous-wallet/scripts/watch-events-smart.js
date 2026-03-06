@@ -337,7 +337,6 @@ class SmartEventWatcher {
   async tryWebSocket() {
     if (this.isShuttingDown) return;
     
-    this.currentMode = 'websocket';
     log('Attempting WebSocket connection...');
 
     return new Promise((resolve) => {
@@ -357,6 +356,7 @@ class SmartEventWatcher {
       this.ws.on('open', () => {
         connected = true;
         clearTimeout(connectionTimeout);
+        this.currentMode = 'websocket';
         this.wsIsConnected = true;
         this.wsReconnectAttempts = 0;
         log('WebSocket connected successfully');
