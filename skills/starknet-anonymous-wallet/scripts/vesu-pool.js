@@ -84,7 +84,10 @@ function toUint256(n) {
 
 function u256ToBigInt(v) {
   if (v === null || v === undefined) return 0n;
-  // starknet.js may return {low, high} or [low, high] or nested under .value
+  // Unwrap starknet.js { value: ... } wrapper (may be nested)
+  while (v && typeof v === 'object' && 'value' in v && !('low' in v) && !Array.isArray(v)) {
+    v = v.value;
+  }
   if (typeof v === 'object') {
     if (Array.isArray(v) && v.length >= 2) {
       return BigInt(String(v[0])) + (BigInt(String(v[1])) << 128n);
