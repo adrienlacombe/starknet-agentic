@@ -36,7 +36,7 @@ function required(name: string): string {
 
 async function main() {
   const provider = new RpcProvider({ nodeUrl: required("STARKNET_RPC_URL") });
-  const tongoAddress = required("TONGO_CONTRACT_ADDRESS");
+  const tongoContractAddress = required("TONGO_CONTRACT_ADDRESS");
 
   const account = new Account({
     provider,
@@ -46,14 +46,14 @@ async function main() {
 
   const sender = new TongoAccount(
     required("TONGO_PRIVATE_KEY_SENDER"),
-    tongoAddress,
+    tongoContractAddress,
     provider,
   );
   // WARNING: Test-only pattern. In production, each Tongo private key must only
   // exist on its owner's machine. Never co-locate multiple Tongo keys.
   const receiver = new TongoAccount(
     required("TONGO_PRIVATE_KEY_RECEIVER"),
-    tongoAddress,
+    tongoContractAddress,
     provider,
   );
 
@@ -82,7 +82,7 @@ async function main() {
   console.log(`\n[2/4] Transferring ${AMOUNT} to receiver...`);
   const transferOp = await sender.transfer({
     amount: AMOUNT,
-    to: receiver.tongoAddress(),
+    to: receiver.tongoContractAddress(),
     sender: account.address,
     fee_to_sender: 0n,
   });
