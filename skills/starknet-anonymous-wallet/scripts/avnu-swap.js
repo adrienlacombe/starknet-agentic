@@ -22,7 +22,7 @@ const DEFAULT_SLIPPAGE = 0.001; // 0.1%
 
 function amountToBigInt(amount, decimals) {
   const dec = Number(decimals ?? 18);
-  if (!Number.isInteger(dec) || dec < 0) throw new Error('Invalid decimals');
+  if (!Number.isInteger(dec) || dec < 0 || dec > 255) throw new Error('Invalid decimals');
   const s = String(amount).trim();
   if (!/^\d+(?:\.\d+)?$/.test(s)) throw new Error(`Invalid amount format: ${amount}`);
   const [i, f = ''] = s.split('.');
