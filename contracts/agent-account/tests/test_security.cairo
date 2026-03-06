@@ -323,6 +323,23 @@ fn test_validate_rejects_approve_zero_for_session_keys() {
     account.__validate__(calls);
 }
 
+#[test]
+#[should_panic(expected: 'Spending limit exceeded')]
+fn test_validate_rejects_transfer_over_spending_limit() {
+    let owner_kp = KeyPairTrait::from_secret_key(0x1234_felt252);
+    let session_kp = KeyPairTrait::from_secret_key(0x5678_felt252);
+    let (addr, account, agent) = deploy_agent_account(owner_kp.public_key);
+
+    register_key(agent, addr, session_kp.public_key, spending_policy(100));
+
+    let (r, s) = session_kp.sign(TX_HASH).unwrap();
+    setup_session_key_tx(addr, session_kp.public_key, r, s);
+    start_cheat_block_timestamp(addr, 100);
+
+    let calls = array![transfer_call(token_addr(), 0xBEEF, 150)];
+    account.__validate__(calls);
+}
+
 // ===========================================================================
 // FUZZ: Spending amounts near limit boundary
 // ===========================================================================

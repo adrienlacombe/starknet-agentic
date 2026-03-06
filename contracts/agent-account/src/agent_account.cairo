@@ -364,12 +364,16 @@ pub mod AgentAccount {
                         let amount_high: u128 = (*calldata.at(2))
                             .try_into()
                             .expect('bad amount_high');
+                        let amount = u256 { low: amount_low, high: amount_high };
                         let amount_is_zero = amount_low == 0 && amount_high == 0;
 
                         if selector == APPROVE_SELECTOR {
                             assert(!amount_is_zero, 'Session: approve0 blocked');
                         }
 
+                        // __validate__ cannot mutate rolling spending counters,
+                        // but it can reject calls that exceed the per-call cap.
+                        assert(amount <= policy.spending_limit, 'Spending limit exceeded');
                         assert(*call.to == policy.spending_token, 'Wrong spending token');
                     }
 

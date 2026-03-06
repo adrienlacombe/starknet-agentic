@@ -15,6 +15,13 @@ standards (SNIP-6, Cairo corelib, ERC-8004 spec).
    - Rationale: invalidates previously signed-but-unsubmitted wallet-set payloads.
 4. `erc8004-cairo`: `_is_approved_or_owner` changed to snapshot
    (`@ContractState`) since it is read-only.
+5. `agent-account`: block `approve(..., 0)` for session keys in both
+   `__validate__` and `__execute__` paths.
+   - Rationale: prevents session keys from revoking owner-managed approvals.
+6. `agent-account`: enforce static per-call `amount <= spending_limit` in
+   `__validate__` for tracked spending selectors.
+   - Rationale: rejects obviously over-limit calls before execution fees;
+     rolling-window cumulative enforcement remains in `__execute__`.
 
 ## Finding-By-Finding Verdict
 
@@ -35,6 +42,13 @@ standards (SNIP-6, Cairo corelib, ERC-8004 spec).
 | L-4 constructor factory non-zero check missing | Design choice | Zero factory is intentional for direct-deploy mode. |
 | L-5 summary integer truncation | Informational | Expected integer arithmetic behavior. |
 | L-6 `get_agent_wallet` lacks exists check | API semantics | Current API intentionally allows zero-address return for unset/non-existent. |
+
+Residual note:
+
+- SNIP-6 validation is read-only, so `__validate__` cannot mutate
+  `spending_used` for full rolling-window accounting. Current implementation
+  mitigates with static per-call bounds in `__validate__`; authoritative
+  cumulative-limit enforcement remains in `__execute__`.
 
 ## Primary References Used
 
