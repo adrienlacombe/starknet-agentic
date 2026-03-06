@@ -491,8 +491,12 @@ class SmartEventWatcher {
       this.currentBlock = block.block_number;
       log(`Starting from block ${this.currentBlock}`);
     } catch (err) {
-      log(`Failed to get starting block: ${err.message}`, 'error');
-      this.currentBlock = 0;
+      log(`Failed to get starting block: ${err.message}. Retrying in 5s...`, 'error');
+      this.isPolling = false;
+      setTimeout(() => {
+        if (!this.isShuttingDown && !this.isPolling) this.startPolling();
+      }, 5000);
+      return;
     }
 
     this.poll();
