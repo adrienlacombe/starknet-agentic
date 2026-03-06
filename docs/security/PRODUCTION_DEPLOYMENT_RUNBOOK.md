@@ -36,7 +36,6 @@ export SEPOLIA_RPC_URL="<starknet-sepolia-rpc>"
 export RPC_URL="<starknet-mainnet-rpc>"
 export DEPLOYER_ACCOUNT="<account_address>"
 export KEYSTORE_PATH="<path_to_encrypted_keystore>"
-export FACTORY_ADDRESS="<deployed_factory_address>"
 
 export IDENTITY_REGISTRY="<identity_registry_addr>"
 export REPUTATION_REGISTRY="<reputation_registry_addr>"
@@ -101,24 +100,43 @@ Use one signer flow only:
 - keystore (recommended):
 
 ```bash
-starkli declare contracts/agent-account/target/release/agent_account_AgentAccount.contract_class.json \
-  --rpc "$RPC_URL" --account "$DEPLOYER_ACCOUNT" --keystore "$KEYSTORE_PATH"
-
-starkli declare contracts/agent-account/target/release/agent_account_AgentAccountFactory.contract_class.json \
-  --rpc "$RPC_URL" --account "$DEPLOYER_ACCOUNT" --keystore "$KEYSTORE_PATH"
+DECLARED_AGENT_ACCOUNT_CLASS_HASH="$(
+  starkli declare contracts/agent-account/target/release/agent_account_AgentAccount.contract_class.json \
+    --rpc "$RPC_URL" --account "$DEPLOYER_ACCOUNT" --keystore "$KEYSTORE_PATH" \
+    | awk '/class hash/{print $NF}'
+)"
+DECLARED_FACTORY_CLASS_HASH="$(
+  starkli declare contracts/agent-account/target/release/agent_account_AgentAccountFactory.contract_class.json \
+    --rpc "$RPC_URL" --account "$DEPLOYER_ACCOUNT" --keystore "$KEYSTORE_PATH" \
+    | awk '/class hash/{print $NF}'
+)"
 ```
 
 - hardware wallet:
 
 ```bash
-starkli declare contracts/agent-account/target/release/agent_account_AgentAccount.contract_class.json \
-  --rpc "$RPC_URL" --account "$DEPLOYER_ACCOUNT" --ledger
-
-starkli declare contracts/agent-account/target/release/agent_account_AgentAccountFactory.contract_class.json \
-  --rpc "$RPC_URL" --account "$DEPLOYER_ACCOUNT" --ledger
+DECLARED_AGENT_ACCOUNT_CLASS_HASH="$(
+  starkli declare contracts/agent-account/target/release/agent_account_AgentAccount.contract_class.json \
+    --rpc "$RPC_URL" --account "$DEPLOYER_ACCOUNT" --ledger \
+    | awk '/class hash/{print $NF}'
+)"
+DECLARED_FACTORY_CLASS_HASH="$(
+  starkli declare contracts/agent-account/target/release/agent_account_AgentAccountFactory.contract_class.json \
+    --rpc "$RPC_URL" --account "$DEPLOYER_ACCOUNT" --ledger \
+    | awk '/class hash/{print $NF}'
+)"
 ```
 
 Do not use `--private-key` for production operations.
+
+Assert declared class hashes match Step 1 computed hashes:
+
+```bash
+test "$DECLARED_AGENT_ACCOUNT_CLASS_HASH" = "$COMPUTED_AGENT_ACCOUNT_CLASS_HASH" \
+  || { echo "Declared AgentAccount hash mismatch"; exit 1; }
+test "$DECLARED_FACTORY_CLASS_HASH" = "$COMPUTED_FACTORY_CLASS_HASH" \
+  || { echo "Declared Factory hash mismatch"; exit 1; }
+```
 
 Record resulting class hashes and tx hashes.
 

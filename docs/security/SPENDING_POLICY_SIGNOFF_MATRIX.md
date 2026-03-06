@@ -65,6 +65,7 @@ starkli invoke "$SESSION_ACCOUNT_ADDR" \
 
 ```bash
 # SP-08: sustained-load sample (attach full script + output artifact)
+start_time=$(date +%s)
 success=0
 failed=0
 for i in $(seq 1 100); do
@@ -75,8 +76,20 @@ for i in $(seq 1 100); do
     --keystore "$SESSION_KEY_KEYSTORE_PATH" \
     && success=$((success + 1)) || failed=$((failed + 1))
 done
-echo "success=$success failed=$failed total=$((success + failed))"
-# include tx_count/hour, success_rate, and failure_rate in evidence bundle
+end_time=$(date +%s)
+elapsed=$((end_time - start_time))
+[ "$elapsed" -le 0 ] && elapsed=1
+total=$((success + failed))
+tx_per_hour=$((total * 3600 / elapsed))
+if [ "$total" -gt 0 ]; then
+  success_rate=$((success * 100 / total))
+  failure_rate=$((failed * 100 / total))
+else
+  success_rate=0
+  failure_rate=0
+fi
+echo "success=$success failed=$failed total=$total elapsed_seconds=$elapsed tx_per_hour=$tx_per_hour success_rate_pct=$success_rate failure_rate_pct=$failure_rate"
+# include tx_count/hour, success_rate, failure_rate, and elapsed_seconds in evidence bundle
 ```
 
 ## Tracking
