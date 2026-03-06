@@ -102,9 +102,11 @@ function resolvePaymasterUrl() {
   return parsed.toString();
 }
 
-let paymaster;
+let paymaster = null;
 
 async function executeAvnuSwap(quote, account, slippage = DEFAULT_SLIPPAGE) {
+  if (!paymaster) throw new Error('Paymaster not initialized');
+
   const result = await executeSwap({
     paymaster: paymaster,
     provider: account,
