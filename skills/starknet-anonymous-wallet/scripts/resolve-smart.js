@@ -335,16 +335,16 @@ function tokenize(str) {
 }
 
 function calculateSimilarity(query, target) {
-  const q = query.toLowerCase();
-  const t = target.toLowerCase();
+  const q = String(query || '').toLowerCase();
+  const t = String(target || '').toLowerCase();
   
   if (t === q) return 100;
   if (t.includes(q)) return 70 + (q.length / t.length) * 20;
   if (q.includes(t)) return 60 + (t.length / q.length) * 15;
   
   let score = 0;
-  const qTokens = tokenize(query);
-  const tTokens = tokenize(target);
+  const qTokens = tokenize(q);
+  const tTokens = tokenize(t);
   const MAX_SUBSTRING_LEN = 6;
   const MAX_SUBSTRING_STARTS = 12;
   
