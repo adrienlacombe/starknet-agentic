@@ -95,6 +95,12 @@ async function main() {
   state = await receiver.state();
   console.log(`  Receiver balance: ${state.balance}`);
 
+  if (state.balance < AMOUNT) {
+    throw new Error(
+      `Receiver balance (${state.balance}) is less than withdraw amount (${AMOUNT}). Aborting.`,
+    );
+  }
+
   // --- 4. Withdraw ---
   console.log(`\n[4/4] Withdrawing ${AMOUNT} back to ERC20...`);
   const withdrawOp = await receiver.withdraw({
