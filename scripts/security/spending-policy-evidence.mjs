@@ -150,6 +150,10 @@ function validateEvidenceEntry(entry, options) {
     fail("Evidence entries must be objects");
   }
 
+  if (entry.txHash === undefined && entry.path === undefined && entry.url === undefined) {
+    fail("Evidence entry must include at least one of txHash, path, or url");
+  }
+
   if (!ALLOWED_EVIDENCE_TYPES.has(String(entry.type))) {
     fail(`Evidence type must be one of ${[...ALLOWED_EVIDENCE_TYPES].join(", ")}`);
   }
@@ -159,7 +163,10 @@ function validateEvidenceEntry(entry, options) {
   }
 
   if (entry.path !== undefined) {
-    const absolutePath = resolveEvidencePath(bundleDir, String(entry.path));
+    if (!isNonEmptyString(entry.path)) {
+      fail("Evidence path must be a non-empty string when provided");
+    }
+    const absolutePath = resolveEvidencePath(bundleDir, entry.path);
     if (!fs.existsSync(absolutePath)) {
       fail(`Evidence file does not exist: ${entry.path}`);
     }

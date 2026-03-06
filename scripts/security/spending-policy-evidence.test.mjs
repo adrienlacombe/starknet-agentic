@@ -12,6 +12,8 @@ import {
   verifySpendingPolicyReport,
 } from "./spending-policy-evidence.mjs";
 
+const TEST_TX_URL = "https://example.invalid/tx/0x1";
+
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "spending-policy-evidence-"));
 }
@@ -38,7 +40,7 @@ function makeClosedReport(bundleDir) {
         {
           type: "tx",
           txHash: `0x${(index + 1).toString(16).padStart(4, "0")}`,
-          url: "https://sepolia.voyager.online/tx/0x1",
+          url: TEST_TX_URL,
         },
         {
           type: "log",
@@ -207,6 +209,28 @@ test("verifySpendingPolicyReport rejects non-string evidence url", () => {
   assert.throws(
     () => verifySpendingPolicyReport(report, { bundleDir: process.cwd() }),
     /evidence url must be a non-empty string/i,
+  );
+});
+
+test("verifySpendingPolicyReport rejects evidence entries without locator", () => {
+  const report = createReportTemplate({ runId: "sp-test", generatedAt: "2026-03-06T00:00:00.000Z" });
+  report.checks = report.checks.map((entry, index) =>
+    index === 0
+      ? {
+          ...entry,
+          status: "pass",
+          evidence: [
+            {
+              type: "other",
+            },
+          ],
+        }
+      : entry,
+  );
+
+  assert.throws(
+    () => verifySpendingPolicyReport(report, { bundleDir: process.cwd() }),
+    /must include at least one of txHash, path, or url/i,
   );
 });
 
