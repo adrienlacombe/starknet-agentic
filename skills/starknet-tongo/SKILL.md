@@ -1,0 +1,247 @@
+---
+name: starknet-tongo
+description: Confidential ERC20 payments on Starknet using Tongo protocol. Fund, transfer, withdraw, and rollover encrypted token balances with zero-knowledge proofs. Use when the user needs privacy-preserving transactions, confidential payments, encrypted balances, or auditable private transfers on Starknet.
+license: Apache-2.0
+metadata: {"author":"starknet-agentic","version":"1.0.0","org":"keep-starknet-strange"}
+keywords: [starknet, tongo, privacy, confidential, encrypted, zk-proofs, elgamal, payments, erc20, audit, compliance]
+allowed-tools: [Bash, Read, Write, Glob, Grep, Task]
+user-invocable: true
+---
+
+# Starknet Tongo Skill
+
+Confidential ERC20 payments on Starknet using the [Tongo protocol](https://github.com/fatlabsxyz/tongo). Tongo wraps any ERC20 token into encrypted balances using ElGamal encryption and zero-knowledge proofs. No trusted setup required.
+
+## Prerequisites
+
+```bash
+npm install @fatsolutions/tongo-sdk starknet@^9.2.1
+```
+
+Environment variables:
+```
+STARKNET_RPC_URL=https://starknet-mainnet.g.alchemy.com/v2/YOUR_KEY
+STARKNET_ACCOUNT_ADDRESS=0x...
+STARKNET_PRIVATE_KEY=0x...
+TONGO_CONTRACT_ADDRESS=0x...
+TONGO_PRIVATE_KEY=0x...
+```
+
+## Core Concepts
+
+| Concept | Description |
+|---------|-------------|
+| **Fund** | Convert ERC20 tokens into encrypted Tongo balances |
+| **Transfer** | Send encrypted amounts between Tongo accounts (ZK-proven) |
+| **Rollover** | Merge pending received funds into usable balance |
+| **Withdraw** | Convert Tongo balance back to ERC20 (public amount) |
+| **Ragequit** | Emergency full withdrawal of entire balance |
+| **Outside Fund** | Fund any Tongo account without needing their private key |
+| **Auditor** | Optional compliance role that can decrypt all transactions |
+
+Transfers land in the receiver's **pending balance** and must be rolled over before they can be spent.
+
+## Setup
+
+```typescript
+import { Account as TongoAccount } from "@fatsolutions/tongo-sdk";
+import { Account, RpcProvider } from "starknet";
+
+const provider = new RpcProvider({ nodeUrl: process.env.STARKNET_RPC_URL });
+
+// Starknet account for paying gas
+const signer = new Account({
+  provider,
+  address: process.env.STARKNET_ACCOUNT_ADDRESS,
+  signer: process.env.STARKNET_PRIVATE_KEY,
+});
+
+// Tongo account for confidential operations
+const tongo = new TongoAccount(
+  process.env.TONGO_PRIVATE_KEY,
+  process.env.TONGO_CONTRACT_ADDRESS,
+  provider,
+);
+
+console.log("Tongo address:", tongo.tongoAddress()); // Base58-encoded public key
+```
+
+## Operations
+
+### Check Encrypted Balance
+
+```typescript
+const state = await tongo.state();
+console.log("Balance:", state.balance);   // Decrypted current balance
+console.log("Pending:", state.pending);   // Funds received but not yet rolled over
+console.log("Nonce:", state.nonce);
+```
+
+### Fund (ERC20 -> Tongo)
+
+```typescript
+const fundOp = await tongo.fund({
+  amount: 100n,
+  sender: signer.address,
+  fee_to_sender: 0n,  // Optional relayer fee
+});
+
+// Requires ERC20 approval + fund call
+const response = await signer.execute([fundOp.approve, fundOp.toCalldata()]);
+await provider.waitForTransaction(response.transaction_hash);
+```
+
+### Transfer (Confidential)
+
+```typescript
+const receiverTongo = new TongoAccount(
+  receiverPrivateKey,
+  process.env.TONGO_CONTRACT_ADDRESS,
+  provider,
+);
+
+const transferOp = await tongo.transfer({
+  amount: 50n,
+  to: receiverTongo.publicKey,
+  sender: signer.address,
+  fee_to_sender: 0n,
+});
+
+const response = await signer.execute(transferOp.toCalldata());
+await provider.waitForTransaction(response.transaction_hash);
+// Amount is encrypted on-chain; receiver sees it in pending balance
+```
+
+### Rollover (Activate Received Funds)
+
+```typescript
+const rolloverOp = await receiverTongo.rollover({
+  sender: signer.address,
+});
+
+const response = await signer.execute(rolloverOp.toCalldata());
+await provider.waitForTransaction(response.transaction_hash);
+// Pending balance moves to current balance
+```
+
+### Withdraw (Tongo -> ERC20)
+
+```typescript
+const withdrawOp = await tongo.withdraw({
+  amount: 25n,
+  to: withdrawalAddress, // Starknet address receiving ERC20
+  sender: signer.address,
+  fee_to_sender: 0n,
+});
+
+const response = await signer.execute(withdrawOp.toCalldata());
+await provider.waitForTransaction(response.transaction_hash);
+```
+
+### Ragequit (Emergency Full Withdrawal)
+
+```typescript
+const ragequitOp = await tongo.ragequit({
+  to: withdrawalAddress,
+  sender: signer.address,
+  fee_to_sender: 0n,
+});
+
+const response = await signer.execute(ragequitOp.toCalldata());
+await provider.waitForTransaction(response.transaction_hash);
+// Entire balance withdrawn; more efficient than regular withdraw for full amount
+```
+
+### Outside Fund (Fund Any Account)
+
+```typescript
+const outsideFundOp = await tongo.outside_fund({
+  amount: 100n,
+  to: recipientPublicKey, // PubKey of the receiver
+});
+
+const response = await signer.execute([
+  outsideFundOp.approve,
+  outsideFundOp.toCalldata(),
+]);
+await provider.waitForTransaction(response.transaction_hash);
+```
+
+## Auditor Usage
+
+An optional auditor can decrypt all transaction amounts for compliance:
+
+```typescript
+import { Auditor } from "@fatsolutions/tongo-sdk";
+
+const auditor = new Auditor(
+  auditorPrivateKey,
+  process.env.TONGO_CONTRACT_ADDRESS,
+  provider,
+);
+
+// Get user balance
+const balance = await auditor.getUserBalance(0, userPublicKey);
+console.log("Declared balance:", balance.amount);
+
+// Get transfer history
+const transfers = await auditor.getUserTransferOut(0, userPublicKey);
+transfers.forEach(t => console.log(`Transferred ${t.amount} to ${t.to}`));
+
+// Get real balance including pending
+const realBalance = await auditor.getRealuserBalance(0, userPublicKey);
+```
+
+## Transaction History
+
+```typescript
+// All events for an account
+const history = await tongo.getTxHistory(fromBlock, "latest", "all");
+
+// Specific event types
+const funds = await tongo.getEventsFund(0);
+const transfersIn = await tongo.getEventsTransferIn(0);
+const transfersOut = await tongo.getEventsTransferOut(0);
+const withdrawals = await tongo.getEventsWithdraw(0);
+const rollovers = await tongo.getEventsRollover(0);
+const ragequits = await tongo.getEventsRagequit(0);
+```
+
+## Operation Parameters
+
+| Operation | Required Fields | Optional Fields |
+|-----------|----------------|-----------------|
+| `fund` | `amount`, `sender` | `fee_to_sender` |
+| `transfer` | `amount`, `to` (PubKey), `sender` | `fee_to_sender` |
+| `withdraw` | `amount`, `to` (address), `sender` | `fee_to_sender` |
+| `ragequit` | `to` (address), `sender` | `fee_to_sender` |
+| `rollover` | `sender` | -- |
+| `outside_fund` | `amount`, `to` (PubKey) | -- |
+
+The `fee_to_sender` field enables relayer/paymaster patterns where a third party submits the transaction and receives a fee.
+
+## Error Handling
+
+| Error | Cause | Resolution |
+|-------|-------|------------|
+| `You dont have enough balance` | Insufficient encrypted balance | Check `state().balance` before transfer/withdraw |
+| `Your pending amount is 0` | Nothing to rollover | Wait for incoming transfer before rollover |
+| `Decryption of Cipherbalance has failed` | Wrong private key or corrupted data | Verify Tongo private key matches account |
+| `Malformed or tampered ciphertext` | Invalid encrypted data | Re-fetch state and retry |
+| Transaction reverted on-chain | Invalid ZK proof | Ensure correct amounts and keys |
+
+## Security Notes
+
+- Tongo private keys are separate from Starknet account keys
+- Transfer amounts are encrypted on-chain; only sender, receiver, and optional auditor can see them
+- Withdraw amounts are public (visible on-chain)
+- No trusted setup: security based on discrete logarithm over the Stark curve
+- Audited by ZKSECURITY
+- ~120K Cairo steps per transfer verification
+
+## References
+
+- [Tongo GitHub](https://github.com/fatlabsxyz/tongo)
+- [Tongo SDK npm](https://www.npmjs.com/package/@fatsolutions/tongo-sdk)
+- [Academic paper (ePrint 2019/191)](https://eprint.iacr.org/2019/191)
+- [SHE Library (Starknet Homomorphic Encryption)](https://github.com/keep-starknet-strange/she)
