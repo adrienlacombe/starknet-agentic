@@ -96,8 +96,10 @@ echo "Observed session public key: $SESSION_PUBLIC_KEY"
 
 UPGRADE_INFO="$(starkli call "$SESSION_ACCOUNT_ADDR" get_upgrade_info --rpc "$RPC_URL")"
 echo "Observed upgrade info tuple: $UPGRADE_INFO"
-# assert timelock delay field >= EXPECTED_SESSION_TIMELOCK_FLOOR
-# assert no pending upgrade outside approved maintenance window
+# tuple order (0-based): [0]=pending_upgrade, [1]=upgrade_scheduled_at,
+# [2]=upgrade_delay, [3]=current_block_timestamp
+# assert UPGRADE_INFO[2] (upgrade_delay) >= EXPECTED_SESSION_TIMELOCK_FLOOR
+# assert UPGRADE_INFO[0] (pending_upgrade) == 0x0 outside approved maintenance window
 ```
 
 Acceptance check:

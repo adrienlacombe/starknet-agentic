@@ -36,6 +36,7 @@ export SEPOLIA_RPC_URL="<starknet-sepolia-rpc>"
 export RPC_URL="<starknet-mainnet-rpc>"
 export DEPLOYER_ACCOUNT="<account_address>"
 export KEYSTORE_PATH="<path_to_encrypted_keystore>"
+export FACTORY_ADDRESS="<deployed_factory_address>"
 
 export IDENTITY_REGISTRY="<identity_registry_addr>"
 export REPUTATION_REGISTRY="<reputation_registry_addr>"
@@ -136,8 +137,8 @@ Example:
 keystore:
 
 ```bash
-starkli deploy <agent_account_factory_class_hash> \
-  "<agent_account_class_hash>" \
+starkli deploy "$COMPUTED_FACTORY_CLASS_HASH" \
+  "$COMPUTED_AGENT_ACCOUNT_CLASS_HASH" \
   "$IDENTITY_REGISTRY" \
   --rpc "$RPC_URL" --account "$DEPLOYER_ACCOUNT" --keystore "$KEYSTORE_PATH"
 ```
@@ -145,8 +146,8 @@ starkli deploy <agent_account_factory_class_hash> \
 hardware wallet:
 
 ```bash
-starkli deploy <agent_account_factory_class_hash> \
-  "<agent_account_class_hash>" \
+starkli deploy "$COMPUTED_FACTORY_CLASS_HASH" \
+  "$COMPUTED_AGENT_ACCOUNT_CLASS_HASH" \
   "$IDENTITY_REGISTRY" \
   --rpc "$RPC_URL" --account "$DEPLOYER_ACCOUNT" --ledger
 ```
@@ -154,9 +155,9 @@ starkli deploy <agent_account_factory_class_hash> \
 ## Step 5: Runtime Verification
 
 ```bash
-starkli call <factory_address> get_owner --rpc "$RPC_URL"
-starkli call <factory_address> get_identity_registry --rpc "$RPC_URL"
-starkli call <factory_address> get_account_class_hash --rpc "$RPC_URL"
+starkli call "$FACTORY_ADDRESS" get_owner --rpc "$RPC_URL"
+starkli call "$FACTORY_ADDRESS" get_identity_registry --rpc "$RPC_URL"
+starkli call "$FACTORY_ADDRESS" get_account_class_hash --rpc "$RPC_URL"
 starkli call "$IDENTITY_REGISTRY" owner --rpc "$RPC_URL"
 starkli call "$REPUTATION_REGISTRY" owner --rpc "$RPC_URL"
 starkli call "$VALIDATION_REGISTRY" owner --rpc "$RPC_URL"
@@ -164,7 +165,7 @@ starkli call "$VALIDATION_REGISTRY" owner --rpc "$RPC_URL"
 
 Acceptance checks:
 
-- `get_owner == DEPLOYER_ACCOUNT == EXPECTED_MULTISIG`
+- `get_owner(FACTORY_ADDRESS) == DEPLOYER_ACCOUNT == EXPECTED_MULTISIG`
 - `get_identity_registry == IDENTITY_REGISTRY` (must not point to legacy set)
 - `get_account_class_hash` matches declared AgentAccount class hash
 - `owner(IDENTITY_REGISTRY) == EXPECTED_MULTISIG`

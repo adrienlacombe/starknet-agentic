@@ -44,7 +44,7 @@ Out of scope for this launch gate (tracked separately):
   - compensating control
   - owner assignment
   - due date
-  - sign-off comment in `#334` and `#273`
+  - dual sign-off by `security-owner` and `contracts-owner` in `#334` and `#273`
 - `Low/Info`: track in backlog with owner and due date.
 
 ## Closure Evidence Requirements

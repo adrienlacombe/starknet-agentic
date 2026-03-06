@@ -54,15 +54,26 @@ SP-05 evidence requirements:
 ## Suggested Command Evidence Snippets
 
 ```bash
-# Example: policy-denied transfer check
-<invoke transfer over limit>
-# expected: policy enforcement revert / denied status
+# SP-06: policy-denied transfer (exceeds per-call limit)
+starkli invoke "$SESSION_ACCOUNT_ADDR" \
+  "$ERC20_TOKEN_ADDR" transfer "$RECIPIENT_ADDR" u256:99999999999 \
+  --rpc "$SEPOLIA_RPC_URL" \
+  --account "$SESSION_ACCOUNT_ADDR" \
+  --keystore "$SESSION_KEY_KEYSTORE_PATH"
+# expected: revert / denied status due to spending policy
 ```
 
 ```bash
-# Example: load test summary
-<test command>
-# include tx count/hour and failure rate
+# SP-08: sustained-load sample (attach full script + output artifact)
+for i in $(seq 1 100); do
+  starkli invoke "$SESSION_ACCOUNT_ADDR" \
+    "$ERC20_TOKEN_ADDR" transfer "$RECIPIENT_ADDR" u256:1 \
+    --rpc "$SEPOLIA_RPC_URL" \
+    --account "$SESSION_ACCOUNT_ADDR" \
+    --keystore "$SESSION_KEY_KEYSTORE_PATH" \
+    || true
+done
+# include tx_count/hour, success_rate, and failure_rate in evidence bundle
 ```
 
 ## Tracking
