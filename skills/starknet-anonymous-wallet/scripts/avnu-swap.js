@@ -174,7 +174,7 @@ async function main() {
   
   try {
     // Step 1: Get quote
-    console.log(JSON.stringify({
+    console.error(JSON.stringify({
       step: "quote",
       status: "fetching",
       sellToken,
@@ -184,7 +184,7 @@ async function main() {
     
     const { quote, sellToken: sellTokenData, buyToken: buyTokenData } = await getSwapQuote(sellToken, buyToken, sellAmount, account.address);
     
-    console.log(JSON.stringify({
+    console.error(JSON.stringify({
       step: "quote",
       status: "success",
       buyAmount: quote.buyAmount.toString(),
@@ -197,7 +197,7 @@ async function main() {
     }));
     
     // Step 2: Execute swap
-    console.log(JSON.stringify({
+    console.error(JSON.stringify({
       step: "execute",
       status: "executing",
       slippage: `${slippage * 100}%`
