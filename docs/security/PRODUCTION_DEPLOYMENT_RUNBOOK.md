@@ -62,12 +62,6 @@ Minimum evidence required:
 
 Mainnet deployment is blocked until this evidence is attached.
 
-## Step 1.5: Mainnet Go/No-Go Human Sign-Off
-
-Before Step 2, post a second approval record (mainnet target) in `#333` and
-link it from `#273` with reviewer identity + timestamp + commit/PR reference.
-No mainnet declaration/deploy command should execute without this record.
-
 ## Step 1: Build and Class Hash Verification
 
 ```bash
@@ -93,7 +87,13 @@ test "$COMPUTED_FACTORY_CLASS_HASH" = "$EXPECTED_FACTORY_CLASS_HASH" \
 Expected hashes must come from auditor-attested closure evidence in `#334`.
 Record comparison output and attach to issue evidence.
 
-## Step 2: Declare Classes (Mainnet)
+## Step 2: Mainnet Go/No-Go Human Sign-Off
+
+Before Step 3, post a second approval record (mainnet target) in `#333` and
+link it from `#273` with reviewer identity + timestamp + commit/PR reference.
+No mainnet declaration/deploy command should execute without this record.
+
+## Step 3: Declare Classes (Mainnet)
 
 Use one signer flow only:
 
@@ -121,7 +121,7 @@ Do not use `--private-key` for production operations.
 
 Record resulting class hashes and tx hashes.
 
-## Step 3: Deploy AgentAccountFactory
+## Step 4: Deploy AgentAccountFactory
 
 Constructor parameters (in order):
 
@@ -151,7 +151,7 @@ starkli deploy <agent_account_factory_class_hash> \
   --rpc "$RPC_URL" --account "$DEPLOYER_ACCOUNT" --ledger
 ```
 
-## Step 4: Runtime Verification
+## Step 5: Runtime Verification
 
 ```bash
 starkli call <factory_address> get_owner --rpc "$RPC_URL"
@@ -171,7 +171,7 @@ Acceptance checks:
 - `owner(REPUTATION_REGISTRY) == EXPECTED_MULTISIG`
 - `owner(VALIDATION_REGISTRY) == EXPECTED_MULTISIG`
 
-## Step 5: SessionAccount Production Path
+## Step 6: SessionAccount Production Path
 
 SessionAccount rollout options:
 
@@ -200,7 +200,7 @@ Required artifacts for SessionAccount changes:
 No SessionAccount changes merge without documented security reasoning and the
 artifact set above.
 
-## Step 6: Post-Deploy Smoke Checks
+## Step 7: Post-Deploy Smoke Checks
 
 - [ ] create one test account via factory path
 - [ ] validate session-key registration and revocation flow

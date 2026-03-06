@@ -60,6 +60,8 @@ export REPUTATION_REGISTRY="<reputation_registry_addr>"
 export VALIDATION_REGISTRY="<validation_registry_addr>"
 export AGENT_ACCOUNT_FACTORY="<agent_account_factory_addr>"
 export SESSION_ACCOUNT_ADDR="<session_account_addr>"
+export EXPECTED_SESSION_PUBLIC_KEY="<expected_session_account_public_key>"
+export EXPECTED_SESSION_TIMELOCK_FLOOR="<minimum_timelock_seconds>"
 ```
 
 Verify registry owners:
@@ -84,14 +86,27 @@ starkli call "$SESSION_ACCOUNT_ADDR" get_public_key --rpc "$RPC_URL"
 starkli call "$SESSION_ACCOUNT_ADDR" get_upgrade_info --rpc "$RPC_URL"
 ```
 
+Validate SessionAccount checks against expected values:
+
+```bash
+SESSION_PUBLIC_KEY="$(starkli call "$SESSION_ACCOUNT_ADDR" get_public_key --rpc "$RPC_URL")"
+echo "Expected session public key: $EXPECTED_SESSION_PUBLIC_KEY"
+echo "Observed session public key: $SESSION_PUBLIC_KEY"
+# assert SESSION_PUBLIC_KEY equals EXPECTED_SESSION_PUBLIC_KEY
+
+UPGRADE_INFO="$(starkli call "$SESSION_ACCOUNT_ADDR" get_upgrade_info --rpc "$RPC_URL")"
+echo "Observed upgrade info tuple: $UPGRADE_INFO"
+# assert timelock delay field >= EXPECTED_SESSION_TIMELOCK_FLOOR
+# assert no pending upgrade outside approved maintenance window
+```
+
 Acceptance check:
 
 - every returned owner MUST equal `EXPECTED_MULTISIG`
-- SessionAccount authority MUST resolve to the expected production key via
-  `get_public_key`
+- SessionAccount authority MUST resolve to `EXPECTED_SESSION_PUBLIC_KEY`
 - SessionAccount `get_upgrade_info` MUST show:
   - no pending upgrade outside approved maintenance window
-  - timelock delay at or above policy floor
+  - timelock delay at or above `EXPECTED_SESSION_TIMELOCK_FLOOR`
 - output links/screenshots MUST be attached to the relevant issue/PR
 
 Note: SessionAccount uses account-key/self-call authority rather than a
