@@ -92,6 +92,7 @@ For production environments, use MCP proxy signer mode rather than raw in-proces
 | `@starknet-agentic/mcp-server` | [`packages/starknet-mcp-server`](./packages/starknet-mcp-server/) | Starknet operations over MCP |
 | `@starknet-agentic/a2a` | [`packages/starknet-a2a`](./packages/starknet-a2a/) | A2A protocol adapter |
 | `@starknet-agentic/agent-passport` | [`packages/starknet-agent-passport`](./packages/starknet-agent-passport/) | ERC-8004 capability metadata helpers |
+| `@starknet-agentic/prediction-arb-scanner` | [`packages/prediction-arb-scanner`](./packages/prediction-arb-scanner/) | Signals-only prediction market arb scanner output model |
 | `x402-starknet` (internal) | [`packages/x402-starknet`](./packages/x402-starknet/) | Internal workspace package for Starknet payment signing utilities |
 | `@starknet-agentic/onboarding-utils` | [`packages/starknet-onboarding-utils`](./packages/starknet-onboarding-utils/) | Shared onboarding helpers |
 
@@ -123,11 +124,16 @@ Parity and Starknet-specific behavior for ERC-8004 is documented in [`docs/ERC80
 pnpm install
 ```
 
-### 2) Build and test JS/TS workspace
+### 2) Build and test JS/TS workspace (packages, examples, website)
 
 ```bash
+# full workspace
 pnpm build
 pnpm test
+
+# packages only (faster path when you do not need example/website checks)
+pnpm -r --filter "./packages/*" build
+pnpm -r --filter "./packages/*" test
 ```
 
 ### 3) Run Cairo checks
@@ -159,6 +165,8 @@ pnpm demo:hello-agent
 | [`examples/secure-defi-demo`](./examples/secure-defi-demo/) | Base reputation envelope + Starknet guardrails + Vesu flow artifact |
 | [`examples/crosschain-demo`](./examples/crosschain-demo/) | Cross-chain registration flow (Base Sepolia + Starknet Sepolia) |
 | [`examples/erc8004-validation-demo`](./examples/erc8004-validation-demo/) | Validation request/response + summary extraction |
+| [`examples/starkzap-onboard-transfer`](./examples/starkzap-onboard-transfer/) | End-to-end Starkzap onboarding and STRK transfer flow (Sepolia) |
+| [`examples/controller-calls`](./examples/controller-calls/) | Non-custodial unsigned-call flow with external signer execution |
 
 ## Security and Release Integrity
 
