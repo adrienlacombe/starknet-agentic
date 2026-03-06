@@ -36,8 +36,8 @@ The scaffolder detects your environment (OpenClaw/MoltBook, Claude Code, Cursor,
 ## System Requirements
 
 - Node.js `>=20.9.0`
-- `pnpm` (workspace package manager)
-- Scarb + Starknet Foundry (for Cairo builds/tests)
+- `pnpm` `>=10.28.2` (workspace package manager)
+- Scarb `>=2.14.0` + Starknet Foundry (`snforge`) `>=0.54.1` (for Cairo builds/tests)
 
 ## Choose Your Path
 
