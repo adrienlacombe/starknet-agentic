@@ -141,6 +141,24 @@ exec node ${shellQuote(scriptPath)} ${shellQuote(`@${configPath}`)}
   }
 }
 
+function deriveWebSocketUrl(httpUrl) {
+  const value = String(httpUrl || '').trim();
+  if (!value) return value;
+
+  // Infura Starknet: https://starknet-mainnet.infura.io/v3/<KEY> -> wss://starknet-mainnet.infura.io/ws/v3/<KEY>
+  if (/\.infura\.io\/v3\//i.test(value)) {
+    return value
+      .replace(/^https:\/\//i, 'wss://')
+      .replace(/^http:\/\//i, 'ws://')
+      .replace(/\/v3\//i, '/ws/v3/');
+  }
+
+  // Default (Alchemy and most providers): preserve path, only switch scheme.
+  return value
+    .replace(/^https:\/\//i, 'wss://')
+    .replace(/^http:\/\//i, 'ws://');
+}
+
 // Unified Event Watcher with mode switching
 class SmartEventWatcher {
   constructor(config) {
@@ -148,7 +166,7 @@ class SmartEventWatcher {
     const rpcUrl = config.httpRpcUrl || resolveRpcUrl();
     this.httpUrl = rpcUrl;
     // Derive WebSocket URL from HTTP URL if not explicitly provided
-    this.wsUrl = config.wsRpcUrl || this.httpUrl.replace(/^https?:\/\//, (m) => m.startsWith('https') ? 'wss://' : 'ws://').replace(/\/?$/, '/ws');
+    this.wsUrl = config.wsRpcUrl || deriveWebSocketUrl(this.httpUrl);
     this.pollIntervalMs = config.pollIntervalMs || DEFAULT_POLL_INTERVAL;
     this.healthCheckIntervalMs = config.healthCheckIntervalMs || DEFAULT_HEALTH_CHECK_INTERVAL;
     this.webhookTimeoutMs = config.webhookTimeoutMs || DEFAULT_WEBHOOK_TIMEOUT_MS;
