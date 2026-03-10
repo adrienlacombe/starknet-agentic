@@ -1,0 +1,146 @@
+#!/usr/bin/env -S npx tsx
+import dotenv from "dotenv";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { parseConfig } from "./src/config.js";
+import { createExtendedClient } from "./src/extended.js";
+import { estimateCarryEdge, evaluateCarryDecision } from "./src/strategy.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, ".env") });
+
+function log(level: "INFO" | "WARN" | "ERROR", message: string, data?: Record<string, unknown>): void {
+  const payload = {
+    timestamp: new Date().toISOString(),
+    level,
+    component: "carry-agent-demo",
+    message,
+    ...(data || {}),
+  };
+  const line = JSON.stringify(payload);
+  if (level === "ERROR") {
+    console.error(line);
+  } else if (level === "WARN") {
+    console.warn(line);
+  } else {
+    console.log(line);
+  }
+}
+
+async function main(): Promise<void> {
+  const cfg = parseConfig();
+  const client = createExtendedClient({
+    baseUrl: cfg.EXTENDED_BASE_URL,
+    apiPrefix: cfg.EXTENDED_API_PREFIX,
+    apiKey: cfg.EXTENDED_API_KEY,
+  });
+
+  log("INFO", "Starting carry-agent demo run.", {
+    market: cfg.CARRY_MARKET,
+    notionalUsd: cfg.CARRY_NOTIONAL_USD,
+    holdHours: cfg.CARRY_HOLD_HOURS,
+    fundingWindowHours: cfg.CARRY_FUNDING_WINDOW_HOURS,
+  });
+
+  const nowMs = Date.now();
+  const windowStartMs = nowMs - cfg.CARRY_FUNDING_WINDOW_HOURS * 60 * 60 * 1000;
+
+  const [snapshot, fundingHistory] = await Promise.all([
+    client.getMarketSnapshot(cfg.CARRY_MARKET),
+    client.getFundingHistory(cfg.CARRY_MARKET, windowStartMs, nowMs),
+  ]);
+
+  let perpEntryFeeRate = 0.00025;
+  let perpExitFeeRate = 0.00025;
+  let feesSource: "default" | "extended_user_tier" = "default";
+
+  if (cfg.EXTENDED_API_KEY) {
+    try {
+      const fees = await client.getUserFees(cfg.CARRY_MARKET);
+      perpEntryFeeRate = fees.takerFeeRate;
+      perpExitFeeRate = fees.takerFeeRate;
+      feesSource = "extended_user_tier";
+    } catch (error) {
+      log("WARN", "Failed to fetch user fee tier; using default taker fee assumption.", {
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  const edge = estimateCarryEdge({
+    notionalUsd: cfg.CARRY_NOTIONAL_USD,
+    holdHours: cfg.CARRY_HOLD_HOURS,
+    expectedFundingRateHourly: snapshot.fundingRate,
+    spotEntryFeeRate: cfg.CARRY_SPOT_ENTRY_FEE_RATE,
+    spotExitFeeRate: cfg.CARRY_SPOT_EXIT_FEE_RATE,
+    perpEntryFeeRate,
+    perpExitFeeRate,
+    expectedSlippageBps: cfg.CARRY_EXPECTED_SLIPPAGE_BPS,
+    driftReserveBps: cfg.CARRY_DRIFT_RESERVE_BPS,
+    gasCostUsdTotal: cfg.CARRY_GAS_COST_USD_TOTAL,
+  });
+
+  const fundingHistoryHourly = fundingHistory.map((point) => point.fundingRate);
+  const decision = evaluateCarryDecision({
+    market: cfg.CARRY_MARKET,
+    hasOpenPosition: cfg.CARRY_HAS_OPEN_POSITION,
+    venueHealthy: cfg.CARRY_VENUE_HEALTHY,
+    spotQuoteAgeMs: 500,
+    perpSnapshotAgeMs: 500,
+    feesAgeMs: 500,
+    maxDataAgeMs: cfg.CARRY_MAX_DATA_AGE_MS,
+    fundingHistoryHourly,
+    minFundingAverageHourly: cfg.CARRY_MIN_FUNDING_AVG_HOURLY,
+    minFundingPositiveShare: cfg.CARRY_MIN_FUNDING_POSITIVE_SHARE,
+    enterMinNetEdgeUsd: cfg.CARRY_ENTER_MIN_NET_EDGE_USD,
+    enterMinNetEdgeBps: cfg.CARRY_ENTER_MIN_NET_EDGE_BPS,
+    holdMinNetEdgeUsd: cfg.CARRY_HOLD_MIN_NET_EDGE_USD,
+    edge,
+  });
+
+  const runId = `carry-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+  const outputDir = path.resolve(__dirname, cfg.CARRY_OUTPUT_DIR);
+  fs.mkdirSync(outputDir, { recursive: true });
+  const artifactPath = path.join(outputDir, `${runId}.json`);
+
+  const artifact = {
+    runId,
+    generatedAt: new Date().toISOString(),
+    config: {
+      market: cfg.CARRY_MARKET,
+      notionalUsd: cfg.CARRY_NOTIONAL_USD,
+      holdHours: cfg.CARRY_HOLD_HOURS,
+      fundingWindowHours: cfg.CARRY_FUNDING_WINDOW_HOURS,
+      hasOpenPosition: cfg.CARRY_HAS_OPEN_POSITION,
+      venueHealthy: cfg.CARRY_VENUE_HEALTHY,
+    },
+    marketSnapshot: snapshot,
+    fundingPoints: fundingHistory.length,
+    fundingHistoryHourly,
+    feeMode: feesSource,
+    decision,
+  };
+
+  fs.writeFileSync(artifactPath, `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
+
+  log("INFO", "Carry-agent demo completed.", {
+    action: decision.action,
+    reasonCode: decision.reasonCode,
+    netEdgeUsd: decision.edge.netEdgeUsd,
+    netEdgeBps: decision.edge.netEdgeBps,
+    artifactPath,
+  });
+
+  if (decision.action === "ENTER") {
+    log("WARN", "Decision is ENTER. This demo is monitor-only and does not execute orders.");
+  }
+}
+
+main().catch((error) => {
+  log("ERROR", "Carry-agent demo failed.", {
+    reason: error instanceof Error ? error.message : String(error),
+  });
+  process.exitCode = 1;
+});
