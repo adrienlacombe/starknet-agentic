@@ -22,6 +22,7 @@ Production-ready skills for AI agents operating on Starknet. Built for the Agent
 | [account-abstraction](./account-abstraction/) | Starknet account validation/session-key correctness and risk patterns | Complete |
 | [starknet-network-facts](./starknet-network-facts/) | Network-level protocol constraints that affect contract safety decisions | Complete |
 | [starknet-js](./starknet-js/) | starknet.js v9.x SDK guide for dApps, accounts, transactions, paymaster | Complete |
+| [starknet-tongo](./starknet-tongo/) | Confidential ERC20 payments with encrypted balances and ZK-proven transfers | Complete |
 
 ## Installation
 
@@ -29,6 +30,7 @@ Production-ready skills for AI agents operating on Starknet. Built for the Agent
 
 For agent platforms (including OpenClaw/MoltBook) and tooling that want to index skills programmatically, see:
 - `skills/manifest.json` (generated, stable format)
+- Cairo cutover and legacy mapping: `../docs/CAIRO_SKILLS_MIGRATION.md`
 
 ### Option 1: GitHub (Recommended)
 
@@ -53,14 +55,10 @@ npx skills add keep-starknet-strange/starknet-agentic/skills/cairo-auditor
 /plugin marketplace add keep-starknet-strange/starknet-agentic
 
 # Install all skills
-/plugin install starknet-skills@keep-starknet-strange-starknet-agentic
+/plugin install starknet-agentic-skills@keep-starknet-strange-starknet-agentic
 
-# Or install individual skill plugins
-/plugin install starknet-wallet@keep-starknet-strange-starknet-agentic
-/plugin install starknet-defi@keep-starknet-strange-starknet-agentic
-/plugin install starknet-identity@keep-starknet-strange-starknet-agentic
-/plugin install starknet-payments@keep-starknet-strange-starknet-agentic
-/plugin install starknet-privacy@keep-starknet-strange-starknet-agentic
+# Invoke a specific bundled skill (after installing the plugin)
+/starknet-agentic-skills:cairo-auditor
 ```
 
 ### Option 3: Direct Git Clone
@@ -86,7 +84,7 @@ Installed skills don't auto-update. To get the latest version:
 npx skills add keep-starknet-strange/starknet-agentic --force
 
 # Claude Code - update plugin
-/plugin update starknet-skills@keep-starknet-strange-starknet-agentic
+/plugin update starknet-agentic-skills@keep-starknet-strange-starknet-agentic
 
 # Git clone - pull latest
 git pull origin main
