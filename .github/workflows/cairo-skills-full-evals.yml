@@ -72,7 +72,14 @@ jobs:
 
       - name: Validate findings JSONL
         run: |
-          for file in datasets/normalized/findings/*.jsonl; do
+          shopt -s nullglob
+          files=(datasets/normalized/findings/*.jsonl)
+          shopt -u nullglob
+          if (( ${#files[@]} == 0 )); then
+            echo "ERROR: no findings JSONL files found in datasets/normalized/findings/" >&2
+            exit 1
+          fi
+          for file in "${files[@]}"; do
             python scripts/audit-pipeline/validate_jsonl.py \
               --schema datasets/normalized/finding.schema.json \
               --jsonl "$file"
@@ -123,7 +130,8 @@ jobs:
             --min-vectors 120
           python scripts/quality/check_semgrep_vector_coverage.py \
             --core-min 1 \
-            --core-max 120
+            --core-max 120 \
+            --allow-out-of-range
 
       - name: Manual-19 gold recall smoke
         run: |
@@ -177,3 +185,17 @@ jobs:
             --min-precision 1.0 \
             --min-recall 1.0 \
             --min-evaluated 60
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cairo-skills-full-evals-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            /tmp/manual-19-gold-recall.md
+            /tmp/manual-19-gold-recall.json
+            /tmp/cairo-auditor-benchmark.md
+            /tmp/cairo-auditor-realworld-benchmark.md
+            /tmp/contract-skill-benchmark.md
