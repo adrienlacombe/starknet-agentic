@@ -167,6 +167,7 @@ pnpm demo:hello-agent
 | [`examples/hello-agent`](./examples/hello-agent/) | Minimal RPC + state read + transaction path |
 | [`examples/onboard-agent`](./examples/onboard-agent/) | Deploy agent account + register identity + receipt artifacts |
 | [`examples/defi-agent`](./examples/defi-agent/) | Autonomous DeFi strategy agent (triangular arb + risk controls) |
+| [`examples/carry-agent`](./examples/carry-agent/) | Deterministic carry monitor (Extended funding + net-edge decision artifact) |
 | [`examples/full-stack-swarm`](./examples/full-stack-swarm/) | Autonomous multi-agent run with MCP + signer boundary + ERC-8004 |
 | [`examples/secure-defi-demo`](./examples/secure-defi-demo/) | Base reputation envelope + Starknet guardrails + Vesu flow artifact |
 | [`examples/crosschain-demo`](./examples/crosschain-demo/) | Cross-chain registration flow (Base Sepolia + Starknet Sepolia) |

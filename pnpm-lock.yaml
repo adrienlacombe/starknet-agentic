@@ -39,6 +39,25 @@ importers:
         specifier: ^4.0.18
         version: 4.0.18(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2)
 
+  examples/carry-agent:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.27.1
+        version: 1.27.1(zod@4.3.6)
+      dotenv:
+        specifier: ^17.3.1
+        version: 17.3.1
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      tsx:
+        specifier: ^4.20.5
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+
   examples/controller-calls:
     dependencies:
       starknet:
@@ -8700,7 +8719,7 @@ snapshots:
 
   tsx@4.21.0:
     dependencies:
-      esbuild: 0.27.2
+      esbuild: 0.27.3
       get-tsconfig: 4.13.1
     optionalDependencies:
       fsevents: 2.3.3
