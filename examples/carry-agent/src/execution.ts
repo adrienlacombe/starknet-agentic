@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type {
   ExecutionIncident,
   ExecutionOutcome,
@@ -22,7 +24,12 @@ export type ExecutionVenue = {
   cancelAllOpenOrders: () => Promise<void>;
   placeSpotBuy: (input: { market: string; notionalUsd: number }) => Promise<ExecutionOrderResult>;
   placePerpShort: (input: { market: string; notionalUsd: number }) => Promise<ExecutionOrderResult>;
-  neutralizeSpot: (input: { market: string; notionalUsd: number }) => Promise<ExecutionOrderResult>;
+  neutralizeSpot: (input: {
+    market: string;
+    notionalUsd: number;
+    baseAmount?: number;
+  }) => Promise<ExecutionOrderResult>;
+  refreshPerpOrder?: (order: ExecutionOrderResult) => Promise<ExecutionOrderResult>;
 };
 
 export type MockExecutionScenario =
@@ -39,9 +46,8 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function mockHash(seed: string): string {
-  const suffix = Buffer.from(`${seed}-${Date.now()}`).toString("hex").slice(0, 16);
-  return `0x${suffix.padEnd(64, "0")}`;
+function deterministicHash(seed: string): string {
+  return `0x${createHash("sha256").update(seed).digest("hex")}`;
 }
 
 function extractTxHash(payload: unknown): string | undefined {
@@ -58,8 +64,61 @@ function extractTxHash(payload: unknown): string | undefined {
   return undefined;
 }
 
+function extractNumeric(payload: unknown, keys: string[]): number | undefined {
+  if (payload === null || typeof payload !== "object") {
+    return undefined;
+  }
+
+  const asRecord = payload as Record<string, unknown>;
+  for (const key of keys) {
+    const value = asRecord[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === "string") {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  return undefined;
+}
+
 function toDecimalAmount(value: number, decimals = 6): string {
   return value.toFixed(decimals).replace(/\.?0+$/, "");
+}
+
+function asErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isTimeoutMessage(message: string): boolean {
+  return message.toLowerCase().includes("timed out");
+}
+
+function computeResidualUnhedged(
+  spotOrder: ExecutionOrderResult,
+  perpOrder: ExecutionOrderResult,
+): number {
+  return Math.max(0, spotOrder.filledNotionalUsd - perpOrder.filledNotionalUsd);
+}
+
+function computeResidualBaseAmount(
+  spotOrder: ExecutionOrderResult,
+  residualNotionalUsd: number,
+): number | undefined {
+  if (spotOrder.filledBaseAmount === undefined || spotOrder.filledNotionalUsd <= 0) {
+    return undefined;
+  }
+
+  const ratio = residualNotionalUsd / spotOrder.filledNotionalUsd;
+  if (!Number.isFinite(ratio) || ratio <= 0) {
+    return undefined;
+  }
+
+  return spotOrder.filledBaseAmount * ratio;
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
@@ -78,7 +137,44 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMes
   }
 }
 
+async function cancelOpenOrders(
+  venue: ExecutionVenue,
+  incidents: ExecutionIncident[],
+): Promise<void> {
+  try {
+    await venue.cancelAllOpenOrders();
+  } catch (error) {
+    incidents.push({
+      type: "second_leg_failed",
+      message: `Failed to cancel open orders: ${asErrorMessage(error)}`,
+    });
+  }
+}
+
+async function settlePerpOrderAfterCancel(
+  venue: ExecutionVenue,
+  order: ExecutionOrderResult,
+  incidents: ExecutionIncident[],
+): Promise<ExecutionOrderResult> {
+  await cancelOpenOrders(venue, incidents);
+  if (!venue.refreshPerpOrder) {
+    return order;
+  }
+
+  try {
+    return await venue.refreshPerpOrder(order);
+  } catch (error) {
+    incidents.push({
+      type: "second_leg_failed",
+      message: `Failed to refresh perp order after cancel: ${asErrorMessage(error)}`,
+    });
+    return order;
+  }
+}
+
 export class McpSpotExecutionVenue implements ExecutionVenue {
+  private sequence = 0;
+
   constructor(
     private readonly toolCaller: ToolCaller,
     private readonly settings: {
@@ -89,6 +185,16 @@ export class McpSpotExecutionVenue implements ExecutionVenue {
     },
     private readonly perpExecutionClient?: PerpExecutionClient,
   ) {}
+
+  private nextId(prefix: string): string {
+    this.sequence += 1;
+    return `${prefix}-${String(this.sequence).padStart(6, "0")}`;
+  }
+
+  private nextHash(seed: string): string {
+    this.sequence += 1;
+    return deterministicHash(`${seed}:${this.sequence}`);
+  }
 
   async armDeadmanSwitch(seconds: number): Promise<void> {
     if (!this.perpExecutionClient) {
@@ -102,10 +208,10 @@ export class McpSpotExecutionVenue implements ExecutionVenue {
       return;
     }
     await this.perpExecutionClient.cancelAllOpenOrders();
-    return;
   }
 
   async placeSpotBuy(input: { market: string; notionalUsd: number }): Promise<ExecutionOrderResult> {
+    const estimatedBaseAmount = input.notionalUsd / this.settings.markPrice;
     const response = await this.toolCaller.callTool("starknet_swap", {
       sellToken: this.settings.spotSellToken,
       buyToken: this.settings.spotBuyToken,
@@ -114,9 +220,19 @@ export class McpSpotExecutionVenue implements ExecutionVenue {
     });
 
     return {
-      orderId: `mcp-spot-${Date.now()}`,
+      orderId: this.nextId("mcp-spot"),
       filledNotionalUsd: input.notionalUsd,
-      txHash: extractTxHash(response),
+      filledBaseAmount:
+        extractNumeric(response, [
+          "filledBaseAmount",
+          "filledBuyAmount",
+          "buyAmount",
+          "amountOut",
+          "outputAmount",
+          "receivedAmount",
+          "toAmount",
+        ]) ?? estimatedBaseAmount,
+      txHash: extractTxHash(response) ?? this.nextHash(`spot:${input.market}`),
     };
   }
 
@@ -130,35 +246,53 @@ export class McpSpotExecutionVenue implements ExecutionVenue {
     }
 
     return {
-      orderId: `perp-mock-${Date.now()}`,
+      orderId: this.nextId("perp-mock"),
       filledNotionalUsd: input.notionalUsd,
-      txHash: mockHash(`perp-mock:${input.market}`),
+      txHash: this.nextHash(`perp-mock:${input.market}`),
     };
   }
 
-  async neutralizeSpot(input: { market: string; notionalUsd: number }): Promise<ExecutionOrderResult> {
-    const estimatedBaseAmount = input.notionalUsd / this.settings.markPrice;
+  async neutralizeSpot(input: {
+    market: string;
+    notionalUsd: number;
+    baseAmount?: number;
+  }): Promise<ExecutionOrderResult> {
+    const baseAmount = input.baseAmount ?? input.notionalUsd / this.settings.markPrice;
     const response = await this.toolCaller.callTool("starknet_swap", {
       sellToken: this.settings.spotBuyToken,
       buyToken: this.settings.spotSellToken,
-      amount: toDecimalAmount(estimatedBaseAmount, 8),
+      amount: toDecimalAmount(baseAmount, 8),
       slippage: this.settings.slippage,
     });
 
     return {
-      orderId: `mcp-neutralize-${Date.now()}`,
+      orderId: this.nextId("mcp-neutralize"),
       filledNotionalUsd: input.notionalUsd,
-      txHash: extractTxHash(response),
+      filledBaseAmount: baseAmount,
+      txHash: extractTxHash(response) ?? this.nextHash(`neutralize:${input.market}`),
     };
   }
 }
 
 export class MockExecutionVenue implements ExecutionVenue {
+  private sequence = 0;
+  private latestPerpOrder: ExecutionOrderResult | null = null;
+
   constructor(
     private readonly scenario: MockExecutionScenario,
     private readonly secondLegDelayMs: number,
     private readonly secondLegFillRatio: number,
   ) {}
+
+  private nextId(prefix: string): string {
+    this.sequence += 1;
+    return `${prefix}-${String(this.sequence).padStart(6, "0")}`;
+  }
+
+  private nextHash(seed: string): string {
+    this.sequence += 1;
+    return deterministicHash(`${seed}:${this.sequence}`);
+  }
 
   async armDeadmanSwitch(_seconds: number): Promise<void> {
     return;
@@ -171,9 +305,9 @@ export class MockExecutionVenue implements ExecutionVenue {
   async placeSpotBuy(input: { market: string; notionalUsd: number }): Promise<ExecutionOrderResult> {
     await sleep(100);
     return {
-      orderId: `spot-${Date.now()}`,
+      orderId: this.nextId("spot"),
       filledNotionalUsd: input.notionalUsd,
-      txHash: mockHash(`spot:${input.market}`),
+      txHash: this.nextHash(`spot:${input.market}`),
     };
   }
 
@@ -184,27 +318,47 @@ export class MockExecutionVenue implements ExecutionVenue {
       throw new Error("Perp leg rejected by venue in mock scenario.");
     }
 
-    if (this.scenario === "partial_fill") {
-      return {
-        orderId: `perp-${Date.now()}`,
-        filledNotionalUsd: input.notionalUsd * this.secondLegFillRatio,
-        txHash: mockHash(`perp_partial:${input.market}`),
-      };
+    if (this.scenario === "second_leg_timeout") {
+      throw new Error("Perp leg timed out in mock scenario.");
     }
 
-    return {
-      orderId: `perp-${Date.now()}`,
+    if (this.scenario === "partial_fill") {
+      const order = {
+        orderId: this.nextId("perp"),
+        filledNotionalUsd: input.notionalUsd * this.secondLegFillRatio,
+        txHash: this.nextHash(`perp_partial:${input.market}`),
+      };
+      this.latestPerpOrder = order;
+      return order;
+    }
+
+    const order = {
+      orderId: this.nextId("perp"),
       filledNotionalUsd: input.notionalUsd,
-      txHash: mockHash(`perp:${input.market}`),
+      txHash: this.nextHash(`perp:${input.market}`),
     };
+    this.latestPerpOrder = order;
+    return order;
   }
 
-  async neutralizeSpot(input: { market: string; notionalUsd: number }): Promise<ExecutionOrderResult> {
+  async refreshPerpOrder(order: ExecutionOrderResult): Promise<ExecutionOrderResult> {
+    if (this.latestPerpOrder?.orderId === order.orderId) {
+      return this.latestPerpOrder;
+    }
+    return order;
+  }
+
+  async neutralizeSpot(input: {
+    market: string;
+    notionalUsd: number;
+    baseAmount?: number;
+  }): Promise<ExecutionOrderResult> {
     await sleep(100);
     return {
-      orderId: `neutralize-${Date.now()}`,
+      orderId: this.nextId("neutralize"),
       filledNotionalUsd: input.notionalUsd,
-      txHash: mockHash(`neutralize:${input.market}`),
+      filledBaseAmount: input.baseAmount,
+      txHash: this.nextHash(`neutralize:${input.market}`),
     };
   }
 }
@@ -215,6 +369,7 @@ function buildNeutralizedOutcome(input: {
   incidents: ExecutionIncident[];
   deadmanArmed: boolean;
   spotOrder: ExecutionOrderResult;
+  perpOrder?: ExecutionOrderResult;
   neutralizationOrder: ExecutionOrderResult;
 }): ExecutionOutcome {
   return {
@@ -224,6 +379,7 @@ function buildNeutralizedOutcome(input: {
     incidents: input.incidents,
     deadmanArmed: input.deadmanArmed,
     spotOrder: input.spotOrder,
+    perpOrder: input.perpOrder,
     neutralizationOrder: input.neutralizationOrder,
   };
 }
@@ -246,62 +402,35 @@ export async function executeHedgedEntry(
 
   let deadmanArmed = false;
   const incidents: ExecutionIncident[] = [];
-
-  if (input.deadmanSwitchEnabled) {
-    await venue.armDeadmanSwitch(input.deadmanSwitchSeconds);
-    deadmanArmed = true;
-  }
-
-  const spotOrder = await venue.placeSpotBuy({
-    market: input.market,
-    notionalUsd: input.notionalUsd,
-  });
-
-  if (spotOrder.filledNotionalUsd > input.maxUnhedgedNotionalUsd) {
-    const neutralizationOrder = await venue.neutralizeSpot({
-      market: input.market,
-      notionalUsd: spotOrder.filledNotionalUsd,
-    });
-
-    incidents.push({
-      type: "unhedged_exceeds_cap",
-      message: "Spot leg exceeded unhedged cap before hedge completion.",
-    });
-
-    await venue.cancelAllOpenOrders();
-    return buildNeutralizedOutcome({
-      reasonCode: "NEUTRALIZED_UNHEDGED_CAP",
-      message: "Spot leg exceeded unhedged cap; position neutralized.",
-      incidents,
-      deadmanArmed,
-      spotOrder,
-      neutralizationOrder,
-    });
-  }
+  let spotOrder: ExecutionOrderResult | undefined;
 
   try {
-    const perpOrder = await withTimeout(
-      venue.placePerpShort({ market: input.market, notionalUsd: input.notionalUsd }),
-      input.leggingTimeoutMs,
-      `Perp hedge leg timed out after ${input.leggingTimeoutMs}ms.`,
-    );
+    if (input.deadmanSwitchEnabled) {
+      await venue.armDeadmanSwitch(input.deadmanSwitchSeconds);
+      deadmanArmed = true;
+    }
 
-    const residualUnhedged = Math.max(0, spotOrder.filledNotionalUsd - perpOrder.filledNotionalUsd);
-    if (residualUnhedged > input.maxUnhedgedNotionalUsd) {
+    spotOrder = await venue.placeSpotBuy({
+      market: input.market,
+      notionalUsd: input.notionalUsd,
+    });
+
+    if (spotOrder.filledNotionalUsd > input.maxUnhedgedNotionalUsd) {
+      await cancelOpenOrders(venue, incidents);
       const neutralizationOrder = await venue.neutralizeSpot({
         market: input.market,
-        notionalUsd: residualUnhedged,
+        notionalUsd: spotOrder.filledNotionalUsd,
+        baseAmount: spotOrder.filledBaseAmount,
       });
 
       incidents.push({
         type: "unhedged_exceeds_cap",
-        message: "Residual unhedged exposure after partial fill exceeded cap.",
+        message: "Spot leg exceeded unhedged cap before hedge completion.",
       });
 
-      await venue.cancelAllOpenOrders();
       return buildNeutralizedOutcome({
-        reasonCode: "NEUTRALIZED_PARTIAL_FILL_UNHEDGED",
-        message: "Partial fill left excessive unhedged exposure; neutralized.",
+        reasonCode: "NEUTRALIZED_UNHEDGED_CAP",
+        message: "Spot leg exceeded unhedged cap; position neutralized.",
         incidents,
         deadmanArmed,
         spotOrder,
@@ -309,25 +438,74 @@ export async function executeHedgedEntry(
       });
     }
 
-    if (residualUnhedged > 0) {
-      await sleep(input.partialFillTimeoutMs);
+    const perpOrder = await withTimeout(
+      venue.placePerpShort({ market: input.market, notionalUsd: input.notionalUsd }),
+      input.leggingTimeoutMs,
+      `Perp hedge leg timed out after ${input.leggingTimeoutMs}ms.`,
+    );
+
+    let residualUnhedged = computeResidualUnhedged(spotOrder, perpOrder);
+    if (residualUnhedged > input.maxUnhedgedNotionalUsd) {
+      const settledPerpOrder = await settlePerpOrderAfterCancel(venue, perpOrder, incidents);
+      residualUnhedged = computeResidualUnhedged(spotOrder, settledPerpOrder);
+
       const neutralizationOrder = await venue.neutralizeSpot({
         market: input.market,
         notionalUsd: residualUnhedged,
+        baseAmount: computeResidualBaseAmount(spotOrder, residualUnhedged),
       });
 
       incidents.push({
         type: "unhedged_exceeds_cap",
+        message: "Residual unhedged exposure after partial fill exceeded cap.",
+      });
+
+      return buildNeutralizedOutcome({
+        reasonCode: "NEUTRALIZED_PARTIAL_FILL_UNHEDGED",
+        message: "Partial fill left excessive unhedged exposure; neutralized.",
+        incidents,
+        deadmanArmed,
+        spotOrder,
+        perpOrder: settledPerpOrder,
+        neutralizationOrder,
+      });
+    }
+
+    if (residualUnhedged > 0) {
+      await sleep(input.partialFillTimeoutMs);
+      const settledPerpOrder = await settlePerpOrderAfterCancel(venue, perpOrder, incidents);
+      residualUnhedged = computeResidualUnhedged(spotOrder, settledPerpOrder);
+
+      if (residualUnhedged <= 0) {
+        return {
+          status: "executed",
+          reasonCode: "EXECUTED_HEDGED_ENTRY",
+          message: "Spot and perp legs completed within safety bounds.",
+          incidents,
+          deadmanArmed,
+          spotOrder,
+          perpOrder: settledPerpOrder,
+        };
+      }
+
+      const neutralizationOrder = await venue.neutralizeSpot({
+        market: input.market,
+        notionalUsd: residualUnhedged,
+        baseAmount: computeResidualBaseAmount(spotOrder, residualUnhedged),
+      });
+
+      incidents.push({
+        type: "partial_fill_timeout",
         message: "Residual unhedged exposure after partial fill did not heal in time.",
       });
 
-      await venue.cancelAllOpenOrders();
       return buildNeutralizedOutcome({
         reasonCode: "NEUTRALIZED_PARTIAL_FILL_TIMEOUT",
         message: "Partial fill remained unhedged beyond timeout; neutralized residual exposure.",
         incidents,
         deadmanArmed,
         spotOrder,
+        perpOrder: settledPerpOrder,
         neutralizationOrder,
       });
     }
@@ -342,27 +520,54 @@ export async function executeHedgedEntry(
       perpOrder,
     };
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    const isTimeout = reason.toLowerCase().includes("timed out");
+    const reason = asErrorMessage(error);
+    const isTimeout = isTimeoutMessage(reason);
 
     incidents.push({
       type: isTimeout ? "legging_timeout" : "second_leg_failed",
       message: reason,
     });
 
-    const neutralizationOrder = await venue.neutralizeSpot({
-      market: input.market,
-      notionalUsd: spotOrder.filledNotionalUsd,
-    });
+    await cancelOpenOrders(venue, incidents);
 
-    await venue.cancelAllOpenOrders();
-    return buildNeutralizedOutcome({
-      reasonCode: isTimeout ? "NEUTRALIZED_LEGGING_TIMEOUT" : "NEUTRALIZED_SECOND_LEG_FAILURE",
-      message: "Second leg failed safety requirements; spot leg neutralized.",
-      incidents,
-      deadmanArmed,
-      spotOrder,
-      neutralizationOrder,
-    });
+    if (!spotOrder) {
+      return {
+        status: "blocked",
+        reasonCode: isTimeout ? "BLOCK_PRE_HEDGE_TIMEOUT" : "BLOCK_PRE_HEDGE_FAILURE",
+        message: "Execution failed before spot leg placement.",
+        incidents,
+        deadmanArmed,
+      };
+    }
+
+    try {
+      const neutralizationOrder = await venue.neutralizeSpot({
+        market: input.market,
+        notionalUsd: spotOrder.filledNotionalUsd,
+        baseAmount: spotOrder.filledBaseAmount,
+      });
+
+      return buildNeutralizedOutcome({
+        reasonCode: isTimeout ? "NEUTRALIZED_LEGGING_TIMEOUT" : "NEUTRALIZED_SECOND_LEG_FAILURE",
+        message: "Second leg failed safety requirements; spot leg neutralized.",
+        incidents,
+        deadmanArmed,
+        spotOrder,
+        neutralizationOrder,
+      });
+    } catch (neutralizeError) {
+      incidents.push({
+        type: "second_leg_failed",
+        message: `Failed to neutralize spot leg: ${asErrorMessage(neutralizeError)}`,
+      });
+      return {
+        status: "blocked",
+        reasonCode: "BLOCK_NEUTRALIZATION_FAILED",
+        message: "Spot leg placed but neutralization failed.",
+        incidents,
+        deadmanArmed,
+        spotOrder,
+      };
+    }
   }
 }

@@ -92,4 +92,72 @@ describe("extended client parsing", () => {
     assert.equal(fees.market, "ETH-USD");
     assert.equal(fees.takerFeeRate, 0.00025);
   });
+
+  it("throws on non-2xx responses", async () => {
+    const fetchImpl = async () => jsonResponse({ error: "upstream unavailable" }, 503);
+    const client = createExtendedClient({
+      baseUrl: "https://api.starknet.extended.exchange",
+      apiPrefix: "/api/v1",
+      fetchImpl,
+    });
+
+    await assert.rejects(
+      () => client.getMarketSnapshot("ETH-USD"),
+      /Extended request failed \(503/,
+    );
+  });
+
+  it("throws when market snapshot payload has no matching rows", async () => {
+    const fetchImpl = async () => jsonResponse({ status: "OK", data: [] });
+    const client = createExtendedClient({
+      baseUrl: "https://api.starknet.extended.exchange",
+      apiPrefix: "/api/v1",
+      fetchImpl,
+    });
+
+    await assert.rejects(
+      () => client.getMarketSnapshot("ETH-USD"),
+      /Market not found in Extended response/,
+    );
+  });
+
+  it("throws when funding history endpoint fails", async () => {
+    const fetchImpl = async (url: string) => {
+      if (url.includes("/funding")) {
+        return jsonResponse({ error: "funding not available" }, 500);
+      }
+      return jsonResponse({
+        status: "OK",
+        data: [],
+      });
+    };
+
+    const client = createExtendedClient({
+      baseUrl: "https://api.starknet.extended.exchange",
+      apiPrefix: "/api/v1",
+      fetchImpl,
+    });
+
+    await assert.rejects(
+      () => client.getFundingHistory("ETH-USD", 1777777000000, 1777777600000),
+      /Extended request failed \(500/,
+    );
+  });
+
+  it("throws when wrapped user fee payload misses required fields", async () => {
+    const fetchImpl = async () =>
+      jsonResponse({
+        status: "OK",
+        data: [{ market: "ETH-USD", takerFeeRate: "0.0002" }],
+      });
+
+    const client = createExtendedClient({
+      baseUrl: "https://api.starknet.extended.exchange",
+      apiPrefix: "/api/v1",
+      apiKey: "test-key",
+      fetchImpl,
+    });
+
+    await assert.rejects(() => client.getUserFees("ETH-USD"), /makerFeeRate/);
+  });
 });

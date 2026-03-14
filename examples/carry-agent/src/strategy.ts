@@ -1,6 +1,10 @@
 import type { CarryCostEstimate, CarryCostInput, CarryDecision } from "./types.js";
 
 export function estimateCarryEdge(input: CarryCostInput): CarryCostEstimate {
+  if (!Number.isFinite(input.notionalUsd) || input.notionalUsd <= 0) {
+    throw new Error("notionalUsd must be a positive finite number");
+  }
+
   const feeRateTotal =
     input.spotEntryFeeRate +
     input.spotExitFeeRate +

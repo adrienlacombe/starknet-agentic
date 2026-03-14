@@ -72,12 +72,12 @@ describe("executeHedgedEntry", () => {
   });
 
   it("neutralizes when second leg times out", async () => {
-    const venue = new MockExecutionVenue("success", 250, 1);
+    const venue = new MockExecutionVenue("second_leg_timeout", 20, 1);
     const outcome = await executeHedgedEntry(venue, {
       market: "ETH-USD",
       notionalUsd: 1000,
       maxUnhedgedNotionalUsd: 1200,
-      leggingTimeoutMs: 40,
+      leggingTimeoutMs: 200,
       partialFillTimeoutMs: 10,
       deadmanSwitchEnabled: false,
       deadmanSwitchSeconds: 30,
@@ -122,7 +122,8 @@ describe("executeHedgedEntry", () => {
 
     assert.equal(outcome.status, "neutralized");
     assert.equal(outcome.reasonCode, "NEUTRALIZED_PARTIAL_FILL_TIMEOUT");
-    assert.equal(outcome.incidents[0]?.type, "unhedged_exceeds_cap");
+    assert.equal(outcome.incidents[0]?.type, "partial_fill_timeout");
+    assert.ok(outcome.perpOrder);
   });
 });
 

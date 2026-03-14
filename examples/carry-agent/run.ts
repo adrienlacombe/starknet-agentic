@@ -1,4 +1,3 @@
-#!/usr/bin/env -S npx tsx
 import dotenv from "dotenv";
 import fs from "node:fs";
 import path from "node:path";
@@ -110,10 +109,20 @@ async function main(): Promise<void> {
   const nowMs = Date.now();
   const windowStartMs = nowMs - cfg.CARRY_FUNDING_WINDOW_HOURS * 60 * 60 * 1000;
 
-  const [snapshot, fundingHistory] = await Promise.all([
-    client.getMarketSnapshot(cfg.CARRY_MARKET),
-    client.getFundingHistory(cfg.CARRY_MARKET, windowStartMs, nowMs),
+  const [snapshotResult, fundingHistoryResult] = await Promise.all([
+    client.getMarketSnapshot(cfg.CARRY_MARKET).then((data) => ({
+      data,
+      fetchedAtMs: Date.now(),
+    })),
+    client.getFundingHistory(cfg.CARRY_MARKET, windowStartMs, nowMs).then((data) => ({
+      data,
+      fetchedAtMs: Date.now(),
+    })),
   ]);
+  const snapshot = snapshotResult.data;
+  const fundingHistory = fundingHistoryResult.data;
+  const snapshotFetchedAtMs = snapshotResult.fetchedAtMs;
+  let feesFetchedAtMs = fundingHistoryResult.fetchedAtMs;
 
   let perpEntryFeeRate = 0.00025;
   let perpExitFeeRate = 0.00025;
@@ -125,6 +134,7 @@ async function main(): Promise<void> {
       perpEntryFeeRate = fees.takerFeeRate;
       perpExitFeeRate = fees.takerFeeRate;
       feesSource = "extended_user_tier";
+      feesFetchedAtMs = Date.now();
     } catch (error) {
       log("WARN", "Failed to fetch user fee tier; using default taker fee assumption.", {
         reason: error instanceof Error ? error.message : String(error),
@@ -146,9 +156,10 @@ async function main(): Promise<void> {
   });
 
   const fundingHistoryHourly = fundingHistory.map((point) => point.fundingRate);
-  const spotQuoteAgeMs = 500;
-  const perpSnapshotAgeMs = 500;
-  const feesAgeMs = 500;
+  const decisionTimestampMs = Date.now();
+  const spotQuoteAgeMs = Math.max(0, decisionTimestampMs - snapshotFetchedAtMs);
+  const perpSnapshotAgeMs = Math.max(0, decisionTimestampMs - snapshotFetchedAtMs);
+  const feesAgeMs = Math.max(0, decisionTimestampMs - feesFetchedAtMs);
   const decision = evaluateCarryDecision({
     market: cfg.CARRY_MARKET,
     hasOpenPosition: cfg.CARRY_HAS_OPEN_POSITION,
@@ -243,7 +254,7 @@ async function main(): Promise<void> {
       });
     }
   } else if (cfg.CARRY_RUN_MODE === "execute") {
-    log("WARN", "Execution blocked by safety rails.", executionSafety);
+    log("WARN", "Execution blocked by safety rails.", { executionSafety });
   }
 
   const runId = `carry-${new Date().toISOString().replace(/[:.]/g, "-")}`;

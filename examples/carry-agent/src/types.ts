@@ -77,6 +77,7 @@ export type CarryRunMode = "dry-run" | "execute";
 export type ExecutionIncidentType =
   | "legging_timeout"
   | "second_leg_failed"
+  | "partial_fill_timeout"
   | "unhedged_exceeds_cap";
 
 export type ExecutionIncident = {
@@ -89,6 +90,7 @@ export type ExecutionStatus = "executed" | "neutralized" | "blocked";
 export type ExecutionOrderResult = {
   orderId: string;
   filledNotionalUsd: number;
+  filledBaseAmount?: number;
   txHash?: string;
 };
 

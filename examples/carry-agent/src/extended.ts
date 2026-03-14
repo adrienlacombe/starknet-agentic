@@ -70,6 +70,19 @@ function buildUrl(baseUrl: string, apiPrefix: string, path: string): string {
   return `${normalizedBase}${normalizedPrefix}${normalizedPath}`;
 }
 
+function safePayloadPreview(payload: unknown): string {
+  try {
+    if (payload === null || typeof payload !== "object") {
+      return String(payload);
+    }
+    const record = payload as Record<string, unknown>;
+    const keys = Object.keys(record).slice(0, 8);
+    return JSON.stringify({ keys, type: "object" });
+  } catch {
+    return typeof payload;
+  }
+}
+
 function extractArrayRows(payload: unknown): unknown[] {
   if (Array.isArray(payload)) {
     return payload;
@@ -82,6 +95,9 @@ function extractArrayRows(payload: unknown): unknown[] {
         return asRecord[key] as unknown[];
       }
     }
+    console.debug(
+      `[carry-agent] extractArrayRows returned [] for unexpected payload shape: ${safePayloadPreview(payload)}`,
+    );
   }
   return [];
 }

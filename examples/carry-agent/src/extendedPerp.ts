@@ -110,6 +110,11 @@ async function runCommand(input: CommandRunInput): Promise<CommandRunOutput> {
         return;
       }
       if (code !== 0) {
+        const structuredFailure = parseStructuredFailure(stdout);
+        if (structuredFailure) {
+          reject(new Error(structuredFailure));
+          return;
+        }
         reject(
           new Error(
             `Extended perp adapter failed (exit=${code}). ${stderr.trim() || stdout.trim() || "No output"}`,
@@ -148,6 +153,19 @@ function parseActionResponse(stdout: string): unknown {
     throw new Error(`Extended perp adapter error (${failed.data.action}): ${failed.data.error}`);
   }
   return payload;
+}
+
+function parseStructuredFailure(stdout: string): string | null {
+  try {
+    const payload = parseJsonLine(stdout);
+    const failed = failureSchema.safeParse(payload);
+    if (failed.success) {
+      return `Extended perp adapter error (${failed.data.action}): ${failed.data.error}`;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export class ExtendedPythonPerpExecutor implements PerpExecutionClient {

@@ -17,6 +17,8 @@ It supports two modes:
 
 ## Setup
 
+From the repository root:
+
 ```bash
 pnpm install
 cp examples/carry-agent/.env.example examples/carry-agent/.env
@@ -38,6 +40,8 @@ pip install x10-python-trading-starknet==0.0.17
 
 ## Run
 
+From the repository root:
+
 ```bash
 pnpm --filter @starknet-agentic/carry-agent-demo run run
 ```
@@ -50,6 +54,8 @@ pnpm --filter @starknet-agentic/carry-agent-demo run run:execute
 
 Spot execution through MCP (Starknet tool surface):
 
+From the repository root:
+
 ```bash
 # build MCP server once
 pnpm --filter @starknet-agentic/mcp-server build
@@ -58,6 +64,9 @@ pnpm --filter @starknet-agentic/mcp-server build
 CARRY_RUN_MODE=execute \
 CARRY_EXECUTION_SURFACE=mcp_spot \
 CARRY_EXTENDED_PYTHON_BIN=examples/carry-agent/.venv/bin/python \
+STARKNET_RPC_URL=https://starknet-sepolia-rpc.publicnode.com \
+STARKNET_ACCOUNT_ADDRESS=0x... \
+STARKNET_PRIVATE_KEY=0x... \
 pnpm --filter @starknet-agentic/carry-agent-demo run run
 ```
 
@@ -68,6 +77,8 @@ Output:
 
 ## Test
 
+From the repository root:
+
 ```bash
 pnpm --filter @starknet-agentic/carry-agent-demo test
 pnpm --filter @starknet-agentic/carry-agent-demo typecheck
@@ -77,7 +88,7 @@ pnpm --filter @starknet-agentic/carry-agent-demo typecheck
 
 - `CARRY_EXECUTION_SURFACE=mock` runs both legs in mock mode.
 - `CARRY_EXECUTION_SURFACE=mcp_spot` executes the spot leg via MCP (`starknet_swap`) and executes the perp hedge on Extended via Python SDK signing.
-- `mcp_spot` execute mode requires: `EXTENDED_API_KEY`, `EXTENDED_PUBLIC_KEY`, `EXTENDED_PRIVATE_KEY`, `EXTENDED_VAULT_NUMBER`.
+- `mcp_spot` execute mode requires: `EXTENDED_API_KEY`, `EXTENDED_PUBLIC_KEY`, `EXTENDED_PRIVATE_KEY`, `EXTENDED_VAULT_NUMBER`, `STARKNET_RPC_URL`, `STARKNET_ACCOUNT_ADDRESS`, `STARKNET_PRIVATE_KEY`.
 - Hard rails enforced before/through execute mode:
   - max notional cap (`CARRY_MAX_NOTIONAL_USD`)
   - stale-data block (`CARRY_MAX_DATA_AGE_MS`)

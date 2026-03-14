@@ -3,6 +3,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 
 export class McpSidecar {
   private client: Client | null = null;
+  private transport: StdioClientTransport | null = null;
 
   constructor(
     private readonly mcpEntry: string,
@@ -10,6 +11,10 @@ export class McpSidecar {
   ) {}
 
   async connect(label: string): Promise<void> {
+    if (this.client || this.transport) {
+      await this.close();
+    }
+
     const passthroughKeys = [
       "PATH",
       "HOME",
@@ -48,11 +53,14 @@ export class McpSidecar {
 
     await client.connect(transport);
     this.client = client;
+    this.transport = transport;
   }
 
   async close(): Promise<void> {
     await this.client?.close();
+    await this.transport?.close();
     this.client = null;
+    this.transport = null;
   }
 
   async listTools(): Promise<string[]> {

@@ -104,13 +104,18 @@ async def _place_short(payload: Dict[str, Any]) -> Dict[str, Any]:
         order_id = placed.data.id
         external_id = placed.data.external_id
         deadline = time.monotonic() + (poll_timeout_ms / 1000)
+        last_poll_error: Exception | None = None
+        transient_poll_errors = (aiohttp.ClientError, asyncio.TimeoutError, ConnectionError)
 
         while time.monotonic() < deadline:
             try:
                 order_response = await client.account.get_order_by_id(order_id)
-            except Exception:
-                await asyncio.sleep(poll_interval_ms / 1000)
-                continue
+            except Exception as exc:
+                if isinstance(exc, transient_poll_errors):
+                    last_poll_error = exc
+                    await asyncio.sleep(poll_interval_ms / 1000)
+                    continue
+                raise
 
             order = order_response.data
             if order is None:
@@ -158,6 +163,10 @@ async def _place_short(payload: Dict[str, Any]) -> Dict[str, Any]:
 
             await asyncio.sleep(poll_interval_ms / 1000)
 
+        if last_poll_error is not None:
+            raise RuntimeError(
+                f"Failed polling Extended order status (order_id={order_id}): {last_poll_error}"
+            ) from last_poll_error
         raise TimeoutError(f"Timed out waiting for Extended order fill (order_id={order_id})")
     finally:
         await client.close()
