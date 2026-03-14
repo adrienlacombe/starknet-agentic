@@ -341,7 +341,11 @@ def main() -> int:
     }
 
     for path, rules in user_facing_docs.items():
-        content = path.read_text(encoding="utf-8")
+        try:
+            content = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            website_taxonomy_errors.append(f"{path}: unable to read file ({exc})")
+            continue
         missing = [needle for needle in rules["required"] if needle not in content]
         forbidden = contains_any(content, rules["forbidden"])
         if missing:
