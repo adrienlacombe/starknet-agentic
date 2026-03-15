@@ -85,7 +85,10 @@ def website_skill_doc_slugs(root: Path = ROOT) -> set[str]:
 
 
 def docs_category_page_slugs(docs_ts_path: Path, category_title: str) -> set[str]:
-    lines = docs_ts_path.read_text(encoding="utf-8").splitlines()
+    try:
+        lines = docs_ts_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return set()
     in_category = False
     in_pages = False
     bracket_depth = 0
@@ -98,6 +101,9 @@ def docs_category_page_slugs(docs_ts_path: Path, category_title: str) -> set[str
 
         if not in_category:
             continue
+
+        if in_category and not in_pages and 'title: "' in line:
+            break
 
         if not in_pages and "pages: [" in line:
             in_pages = True
@@ -121,7 +127,8 @@ def docs_category_page_slugs(docs_ts_path: Path, category_title: str) -> set[str
 def website_skill_registry_errors(root: Path = ROOT) -> list[str]:
     skill_slugs = repo_skill_slugs(root)
     docs_slugs = website_skill_doc_slugs(root)
-    docs_ts_slugs = docs_category_page_slugs(root / "website" / "app" / "data" / "docs.ts", "Skills")
+    docs_ts_path = root / "website" / "app" / "data" / "docs.ts"
+    docs_ts_slugs = docs_category_page_slugs(docs_ts_path, "Skills")
     docs_ts_skill_slugs = docs_ts_slugs - NON_SKILL_DOC_PAGES
 
     errors: list[str] = []
@@ -130,6 +137,8 @@ def website_skill_registry_errors(root: Path = ROOT) -> list[str]:
     orphan_docs = sorted(docs_slugs - skill_slugs)
     orphan_registry = sorted(docs_ts_skill_slugs - skill_slugs)
 
+    if not docs_ts_path.exists():
+        errors.append(f"missing docs registry: {docs_ts_path}")
     if missing_docs:
         errors.append(f"missing skill docs pages: {', '.join(missing_docs)}")
     if missing_registry:
@@ -140,6 +149,62 @@ def website_skill_registry_errors(root: Path = ROOT) -> list[str]:
         errors.append(f"orphan skills in docs registry: {', '.join(orphan_registry)}")
 
     return errors
+
+
+def user_facing_cairo_doc_rules(root: Path = ROOT) -> dict[Path, dict[str, list[str]]]:
+    return {
+        root / "website/content/docs/skills/cairo-coding.mdx": {
+            "required": [
+                "cairo-contract-authoring",
+                "cairo-testing",
+                "cairo-auditor",
+                "cairo-optimization",
+                "cairo-deploy",
+            ],
+            "forbidden": ["cairo-contracts", "cairo-security"],
+        },
+        root / "website/content/docs/skills/overview.mdx": {
+            "required": [
+                "cairo-contract-authoring",
+                "cairo-testing",
+                "cairo-auditor",
+                "cairo-optimization",
+                "cairo-deploy",
+            ],
+            "forbidden": ["cairo-contracts", "cairo-security"],
+        },
+        root / "website/content/docs/getting-started/installation.mdx": {
+            "required": [
+                "cairo-contract-authoring/",
+                "cairo-testing/",
+                "cairo-auditor/",
+                "cairo-optimization/",
+                "cairo-deploy/",
+            ],
+            "forbidden": ["cairo-contracts/", "cairo-security/"],
+        },
+        root / "website/content/docs/skills/starknet-js.mdx": {
+            "required": ["/docs/skills/cairo-coding"],
+            "forbidden": ["cairo-contracts", "cairo-security"],
+        },
+    }
+
+
+def website_cairo_taxonomy_errors(root: Path = ROOT) -> list[str]:
+    website_taxonomy_errors: list[str] = []
+    for path, rules in user_facing_cairo_doc_rules(root).items():
+        try:
+            content = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            website_taxonomy_errors.append(f"{path}: unable to read file ({exc})")
+            continue
+        missing = [needle for needle in rules["required"] if needle not in content]
+        forbidden = contains_any(content, rules["forbidden"])
+        if missing:
+            website_taxonomy_errors.append(f"{path}: missing {', '.join(missing)}")
+        if forbidden:
+            website_taxonomy_errors.append(f"{path}: contains stale ids {', '.join(forbidden)}")
+    return website_taxonomy_errors
 
 
 def plugin_identifier() -> str:
@@ -386,40 +451,7 @@ def main() -> int:
         )
 
     # 8) User-facing website docs should only expose current Cairo skill taxonomy.
-    website_taxonomy_errors: list[str] = []
-    user_facing_docs = {
-        ROOT / "website/content/docs/skills/cairo-coding.mdx": {
-            "required": [
-                "cairo-contract-authoring",
-                "cairo-testing",
-                "cairo-auditor",
-                "cairo-optimization",
-                "cairo-deploy",
-            ],
-            "forbidden": ["cairo-contracts", "cairo-security"],
-        },
-        ROOT / "website/content/docs/skills/overview.mdx": {
-            "required": ["cairo-contract-authoring", "cairo-auditor"],
-            "forbidden": ["cairo-contracts", "cairo-security"],
-        },
-        ROOT / "website/content/docs/getting-started/installation.mdx": {
-            "required": ["cairo-contract-authoring/", "cairo-auditor/"],
-            "forbidden": ["cairo-contracts/", "cairo-security/"],
-        },
-    }
-
-    for path, rules in user_facing_docs.items():
-        try:
-            content = path.read_text(encoding="utf-8")
-        except OSError as exc:
-            website_taxonomy_errors.append(f"{path}: unable to read file ({exc})")
-            continue
-        missing = [needle for needle in rules["required"] if needle not in content]
-        forbidden = contains_any(content, rules["forbidden"])
-        if missing:
-            website_taxonomy_errors.append(f"{path}: missing {', '.join(missing)}")
-        if forbidden:
-            website_taxonomy_errors.append(f"{path}: contains stale ids {', '.join(forbidden)}")
+    website_taxonomy_errors = website_cairo_taxonomy_errors()
 
     if not website_taxonomy_errors:
         results.append(
