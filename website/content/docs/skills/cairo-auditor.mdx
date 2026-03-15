@@ -3,6 +3,8 @@ title: Cairo Auditor
 description: Multi-step Cairo security review with deterministic preflight and strict false-positive gating
 ---
 
+import { Callout, Steps, Step } from "@/components/docs";
+
 # Cairo Auditor
 
 The `cairo-auditor` skill is the repo's security-review orchestrator for Cairo and Starknet code. It combines deterministic preflight checks with parallel audit passes and a strict merge/deduplication gate so the final report stays actionable.
@@ -46,14 +48,20 @@ python3 scripts/quality/audit_local_repo.py \
   --scan-id my-audit
 ```
 
+<Callout type="warning" title="Deterministic scans are not full audits">
 Deterministic scorecards are regression gates, not proof of full audit sufficiency. Use them to catch drift, then run the full skill for release-critical work.
+</Callout>
 
 ## Recommended Flow
 
-```text
-cairo-contract-authoring -> cairo-testing -> cairo-auditor
-cairo-contract-authoring -> cairo-testing -> cairo-optimization -> cairo-auditor
-```
+<Steps>
+<Step title="Standard path">
+`cairo-contract-authoring` → `cairo-testing` → `cairo-auditor`
+</Step>
+<Step title="Performance-sensitive path">
+`cairo-contract-authoring` → `cairo-testing` → `cairo-optimization` → `cairo-auditor`
+</Step>
+</Steps>
 
 ## References
 

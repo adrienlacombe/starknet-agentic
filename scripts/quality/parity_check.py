@@ -128,6 +128,8 @@ def website_skill_registry_errors(root: Path = ROOT) -> list[str]:
     skill_slugs = repo_skill_slugs(root)
     docs_slugs = website_skill_doc_slugs(root)
     docs_ts_path = root / "website" / "app" / "data" / "docs.ts"
+    if not docs_ts_path.exists():
+        return [f"missing docs registry: {docs_ts_path}"]
     docs_ts_slugs = docs_category_page_slugs(docs_ts_path, "Skills")
     docs_ts_skill_slugs = docs_ts_slugs - NON_SKILL_DOC_PAGES
 
@@ -137,8 +139,6 @@ def website_skill_registry_errors(root: Path = ROOT) -> list[str]:
     orphan_docs = sorted(docs_slugs - skill_slugs)
     orphan_registry = sorted(docs_ts_skill_slugs - skill_slugs)
 
-    if not docs_ts_path.exists():
-        errors.append(f"missing docs registry: {docs_ts_path}")
     if missing_docs:
         errors.append(f"missing skill docs pages: {', '.join(missing_docs)}")
     if missing_registry:

@@ -24,6 +24,22 @@ class ParityCheckTests(unittest.TestCase):
         slugs = PARITY_CHECK.docs_category_page_slugs(Path("/repo/website/app/data/docs.ts"), "Skills")
         self.assertEqual(slugs, set())
 
+    def test_website_skill_registry_errors_reports_missing_registry_without_redundant_skill_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "skills" / "cairo-testing").mkdir(parents=True)
+            (root / "skills" / "cairo-testing" / "SKILL.md").write_text(
+                "---\nname: cairo-testing\ndescription: tests\n---\n",
+                encoding="utf-8",
+            )
+
+            errors = PARITY_CHECK.website_skill_registry_errors(root)
+
+            self.assertEqual(
+                errors,
+                [f"missing docs registry: {root / 'website/app/data/docs.ts'}"],
+            )
+
     def test_docs_category_page_slugs_stops_when_target_category_has_no_pages_block(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             docs_ts = Path(tmp) / "docs.ts"

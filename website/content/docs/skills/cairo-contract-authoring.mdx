@@ -3,15 +3,23 @@ title: Cairo Contract Authoring
 description: Workflow-first Starknet contract authoring with secure defaults, component wiring, and audit handoff
 ---
 
+import { Steps, Step } from "@/components/docs";
+
 # Cairo Contract Authoring
 
 The `cairo-contract-authoring` skill is the primary writing surface for Cairo contracts in Starknet Agentic. It guides interface design, storage layout, OpenZeppelin component composition, and mandatory security posture before code is handed off to testing and audit.
 
 ## Installation
 
+### Install from marketplace (shell)
+
 ```bash
 npx skills add keep-starknet-strange/starknet-agentic/skills/cairo-contract-authoring
+```
 
+### Enable and run in the client (slash commands)
+
+```text
 /plugin marketplace add keep-starknet-strange/starknet-agentic
 /plugin install starknet-agentic-skills@starknet-agentic-skills
 /starknet-agentic-skills:cairo-contract-authoring
@@ -42,9 +50,17 @@ npx skills add keep-starknet-strange/starknet-agentic/skills/cairo-contract-auth
 
 ## Recommended Flow
 
-```text
-cairo-contract-authoring -> cairo-testing -> cairo-auditor
-```
+<Steps>
+<Step title="Author contract">
+Use `cairo-contract-authoring` to define interfaces, storage, constructors, and component wiring.
+</Step>
+<Step title="Validate behavior">
+Run `cairo-testing` to lock behavior, auth boundaries, and regressions before signoff.
+</Step>
+<Step title="Audit readiness">
+Use `cairo-auditor` to review the tested contract surface and turn remaining risks into concrete findings.
+</Step>
+</Steps>
 
 Add [cairo-optimization](/docs/skills/cairo-optimization) only after tests pass and behavior is stable.
 
