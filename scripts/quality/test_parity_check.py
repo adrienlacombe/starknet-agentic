@@ -22,7 +22,7 @@ SPEC.loader.exec_module(PARITY_CHECK)
 class ParityCheckTests(unittest.TestCase):
     def test_docs_category_page_slugs_returns_empty_set_for_missing_file(self) -> None:
         slugs = PARITY_CHECK.docs_category_page_slugs(Path("/repo/website/app/data/docs.ts"), "Skills")
-        self.assertEqual(slugs, set())
+        assert slugs == set()
 
     def test_website_skill_registry_errors_reports_missing_registry_without_redundant_skill_errors(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -35,10 +35,7 @@ class ParityCheckTests(unittest.TestCase):
 
             errors = PARITY_CHECK.website_skill_registry_errors(root)
 
-            self.assertEqual(
-                errors,
-                [f"missing docs registry: {root / 'website/app/data/docs.ts'}"],
-            )
+            assert errors == [f"missing docs registry: {root / 'website/app/data/docs.ts'}"]
 
     def test_docs_category_page_slugs_stops_when_target_category_has_no_pages_block(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -64,44 +61,37 @@ class ParityCheckTests(unittest.TestCase):
 
             slugs = PARITY_CHECK.docs_category_page_slugs(docs_ts, "Skills")
 
-            self.assertEqual(slugs, set())
+            assert slugs == set()
 
     def test_user_facing_cairo_doc_rules_require_full_workflow_catalog(self) -> None:
         rules = PARITY_CHECK.user_facing_cairo_doc_rules(Path("/repo"))
 
-        self.assertEqual(
-            rules[Path("/repo/website/content/docs/skills/overview.mdx")]["required"],
-            [
-                "cairo-contract-authoring",
-                "cairo-testing",
-                "cairo-auditor",
-                "cairo-optimization",
-                "cairo-deploy",
-            ],
-        )
-        self.assertEqual(
-            rules[Path("/repo/website/content/docs/getting-started/installation.mdx")]["required"],
-            [
-                "cairo-contract-authoring/",
-                "cairo-testing/",
-                "cairo-auditor/",
-                "cairo-optimization/",
-                "cairo-deploy/",
-            ],
-        )
+        assert rules[Path("/repo/website/content/docs/skills/overview.mdx")]["required"] == [
+            "cairo-contract-authoring",
+            "cairo-testing",
+            "cairo-auditor",
+            "cairo-optimization",
+            "cairo-deploy",
+        ]
+        assert rules[Path("/repo/website/content/docs/getting-started/installation.mdx")]["required"] == [
+            "cairo-contract-authoring/",
+            "cairo-testing/",
+            "cairo-auditor/",
+            "cairo-optimization/",
+            "cairo-deploy/",
+        ]
 
     def test_user_facing_cairo_doc_rules_cover_starknet_js_cross_link(self) -> None:
         rules = PARITY_CHECK.user_facing_cairo_doc_rules(Path("/repo"))
 
-        self.assertIn(Path("/repo/website/content/docs/skills/starknet-js.mdx"), rules)
-        self.assertEqual(
-            rules[Path("/repo/website/content/docs/skills/starknet-js.mdx")]["required"],
-            ["/docs/skills/cairo-coding"],
-        )
-        self.assertEqual(
-            rules[Path("/repo/website/content/docs/skills/starknet-js.mdx")]["forbidden"],
-            ["cairo-contracts", "cairo-security"],
-        )
+        assert Path("/repo/website/content/docs/skills/starknet-js.mdx") in rules
+        assert rules[Path("/repo/website/content/docs/skills/starknet-js.mdx")]["required"] == [
+            "/docs/skills/cairo-coding"
+        ]
+        assert rules[Path("/repo/website/content/docs/skills/starknet-js.mdx")]["forbidden"] == [
+            "cairo-contracts",
+            "cairo-security",
+        ]
 
     def test_website_cairo_taxonomy_errors_reports_stale_id_in_starknet_js(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -115,9 +105,9 @@ class ParityCheckTests(unittest.TestCase):
 
             errors = PARITY_CHECK.website_cairo_taxonomy_errors(root)
 
-            self.assertIn(
-                f"{root / 'website/content/docs/skills/starknet-js.mdx'}: contains stale ids cairo-security",
-                errors,
+            assert (
+                f"{root / 'website/content/docs/skills/starknet-js.mdx'}: contains stale ids cairo-security"
+                in errors
             )
 
     def test_docs_category_page_slugs_extracts_only_target_category(self) -> None:
@@ -149,10 +139,7 @@ class ParityCheckTests(unittest.TestCase):
 
             slugs = PARITY_CHECK.docs_category_page_slugs(docs_ts, "Skills")
 
-            self.assertEqual(
-                slugs,
-                {"overview", "cairo-contract-authoring", "cairo-testing"},
-            )
+            assert slugs == {"overview", "cairo-contract-authoring", "cairo-testing"}
 
     def test_website_skill_registry_errors_reports_missing_skill_page_and_registry_entry(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -196,14 +183,8 @@ class ParityCheckTests(unittest.TestCase):
 
             errors = PARITY_CHECK.website_skill_registry_errors(root)
 
-            self.assertTrue(
-                any("missing skill docs pages: cairo-auditor" in error for error in errors),
-                errors,
-            )
-            self.assertTrue(
-                any("missing skills in docs registry: cairo-auditor" in error for error in errors),
-                errors,
-            )
+            assert any("missing skill docs pages: cairo-auditor" in error for error in errors), errors
+            assert any("missing skills in docs registry: cairo-auditor" in error for error in errors), errors
 
 
 if __name__ == "__main__":
