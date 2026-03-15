@@ -17,6 +17,16 @@ ROOT = Path(__file__).resolve().parents[2]
 LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+\.md)\)")
 SEMVER_RE = re.compile(r"\b(\d+\.\d+\.\d+)\b")
 NON_SKILL_DOC_PAGES = {"overview", "writing-skills", "publishing", "cairo-coding"}
+CAIRO_REQUIRED_SLUGS = [
+    "cairo-contract-authoring",
+    "cairo-testing",
+    "cairo-auditor",
+    "cairo-optimization",
+    "cairo-deploy",
+]
+CAIRO_FORBIDDEN_SLUGS = ["cairo-contracts", "cairo-security"]
+CAIRO_REQUIRED_PATH_SLUGS = [f"{slug}/" for slug in CAIRO_REQUIRED_SLUGS]
+CAIRO_FORBIDDEN_PATH_SLUGS = [f"{slug}/" for slug in CAIRO_FORBIDDEN_SLUGS]
 
 
 @dataclass
@@ -102,13 +112,11 @@ def docs_category_page_slugs(docs_ts_path: Path, category_title: str) -> set[str
         if not in_category:
             continue
 
-        if in_category and not in_pages and 'title: "' in line:
+        if in_category and not in_pages and line.strip().startswith('title: "'):
             break
 
         if not in_pages and "pages: [" in line:
             in_pages = True
-            bracket_depth = line.count("[") - line.count("]")
-            continue
 
         if not in_pages:
             continue
@@ -154,34 +162,16 @@ def website_skill_registry_errors(root: Path = ROOT) -> list[str]:
 def user_facing_cairo_doc_rules(root: Path = ROOT) -> dict[Path, dict[str, list[str]]]:
     return {
         root / "website/content/docs/skills/cairo-coding.mdx": {
-            "required": [
-                "cairo-contract-authoring",
-                "cairo-testing",
-                "cairo-auditor",
-                "cairo-optimization",
-                "cairo-deploy",
-            ],
-            "forbidden": ["cairo-contracts", "cairo-security"],
+            "required": CAIRO_REQUIRED_SLUGS,
+            "forbidden": CAIRO_FORBIDDEN_SLUGS,
         },
         root / "website/content/docs/skills/overview.mdx": {
-            "required": [
-                "cairo-contract-authoring",
-                "cairo-testing",
-                "cairo-auditor",
-                "cairo-optimization",
-                "cairo-deploy",
-            ],
-            "forbidden": ["cairo-contracts", "cairo-security"],
+            "required": CAIRO_REQUIRED_SLUGS,
+            "forbidden": CAIRO_FORBIDDEN_SLUGS,
         },
         root / "website/content/docs/getting-started/installation.mdx": {
-            "required": [
-                "cairo-contract-authoring/",
-                "cairo-testing/",
-                "cairo-auditor/",
-                "cairo-optimization/",
-                "cairo-deploy/",
-            ],
-            "forbidden": ["cairo-contracts/", "cairo-security/"],
+            "required": CAIRO_REQUIRED_PATH_SLUGS,
+            "forbidden": CAIRO_FORBIDDEN_PATH_SLUGS,
         },
         root / "website/content/docs/skills/starknet-js.mdx": {
             "required": ["/docs/skills/cairo-coding"],

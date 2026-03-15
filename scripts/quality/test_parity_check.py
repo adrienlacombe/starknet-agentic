@@ -9,6 +9,7 @@ import sys
 import tempfile
 import textwrap
 import unittest
+from unittest.mock import patch
 
 MODULE_PATH = Path(__file__).with_name("parity_check.py")
 SPEC = importlib.util.spec_from_file_location("parity_check", MODULE_PATH)
@@ -63,6 +64,28 @@ class ParityCheckTests(unittest.TestCase):
 
             assert slugs == set()
 
+    def test_docs_category_page_slugs_captures_inline_page_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            docs_ts = Path(tmp) / "docs.ts"
+            docs_ts.write_text(
+                textwrap.dedent(
+                    """
+                    export const DOC_CATEGORIES = [
+                      {
+                        title: "Skills",
+                        slug: "skills",
+                        pages: [{ slug: "overview", title: "Overview" }],
+                      },
+                    ];
+                    """
+                ),
+                encoding="utf-8",
+            )
+
+            slugs = PARITY_CHECK.docs_category_page_slugs(docs_ts, "Skills")
+
+            assert slugs == {"overview"}
+
     def test_user_facing_cairo_doc_rules_require_full_workflow_catalog(self) -> None:
         rules = PARITY_CHECK.user_facing_cairo_doc_rules(Path("/repo"))
 
@@ -109,6 +132,26 @@ class ParityCheckTests(unittest.TestCase):
                 f"{root / 'website/content/docs/skills/starknet-js.mdx'}: contains stale ids cairo-security"
                 in errors
             )
+
+    def test_website_cairo_taxonomy_unable_to_read_taxonomy_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "website/content/docs/skills/cairo-coding.mdx"
+            for path, rules in PARITY_CHECK.user_facing_cairo_doc_rules(root).items():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("\n".join(rules["required"]), encoding="utf-8")
+
+            original_read_text = Path.read_text
+
+            def flaky_read_text(path_obj: Path, *args: object, **kwargs: object) -> str:
+                if path_obj == target:
+                    raise OSError("boom")
+                return original_read_text(path_obj, *args, **kwargs)
+
+            with patch("pathlib.Path.read_text", autospec=True, side_effect=flaky_read_text):
+                errors = PARITY_CHECK.website_cairo_taxonomy_errors(root)
+
+            assert any(str(target) in error and "unable to read file (boom)" in error for error in errors), errors
 
     def test_docs_category_page_slugs_extracts_only_target_category(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
