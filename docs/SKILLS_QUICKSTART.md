@@ -75,7 +75,7 @@ If both scopes exist and skill resolution is inconsistent, remove project scope 
 
 ## Compatibility Matrix
 
-Last verified: **2026-03-17**
+Verification recency is published on each site build in `starkskills.org/data/site-data.json` (`generated_at_utc`).
 
 | Surface | Status | Install Path |
 |---|---|---|

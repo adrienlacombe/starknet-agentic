@@ -216,7 +216,7 @@ Skill instructions and documentation...
 
 ## Platform Compatibility
 
-Last verified: **2026-03-17**
+Verification recency is published on each site build in `starkskills.org/data/site-data.json` (`generated_at_utc`).
 
 | Surface | Support | Install mode |
 |---|---|---|

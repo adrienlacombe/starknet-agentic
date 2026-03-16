@@ -800,6 +800,8 @@ code {
   .module-grid,
   .vuln-grid,
   .verify-grid,
+  .quickstart-grid,
+  .compat-grid,
   .prompt-grid {
     grid-template-columns: 1fr;
   }

@@ -721,11 +721,12 @@ def shared_script() -> str:
   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   const setCopied = (button) => {
-    const previous = button.textContent;
+    const original = button.getAttribute('data-label') || button.textContent || 'copy';
+    button.setAttribute('data-label', original);
     button.textContent = 'copied';
     button.classList.add('is-copied');
     window.setTimeout(() => {
-      button.textContent = previous;
+      button.textContent = original;
       button.classList.remove('is-copied');
     }, 2000);
   };
@@ -734,6 +735,8 @@ def shared_script() -> str:
     const copyButton = event.target.closest('.copy-button');
     if (copyButton) {
       const text = copyButton.getAttribute('data-copy');
+      const originalLabel = copyButton.getAttribute('data-label') || copyButton.textContent || 'copy';
+      copyButton.setAttribute('data-label', originalLabel);
       if (text) {
         try {
           await navigator.clipboard.writeText(text);
@@ -741,7 +744,7 @@ def shared_script() -> str:
         } catch (_error) {
           copyButton.textContent = 'failed';
           window.setTimeout(() => {
-            copyButton.textContent = copyButton.classList.contains('icon-button') ? 'cp' : 'copy';
+            copyButton.textContent = originalLabel;
           }, 1500);
         }
       }
@@ -883,7 +886,7 @@ def build_index_html(data: dict, domain: str | None) -> str:
                 "Install in Claude.",
                 (
                     f"/plugin marketplace add {links['repo_slug']}\n"
-                    f"/plugin install {links['plugin_name']}@{links['plugin_name']}\n"
+                    f"/plugin install {links['plugin_name']}@{links['plugin_name']} -s user\n"
                     "/reload-plugins"
                 ),
             ),
