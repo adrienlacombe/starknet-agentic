@@ -389,6 +389,41 @@ def load_skill_modules(root: Path, repo_raw: str, repo_github: str, repo_ref: st
     return modules, plugin_name
 
 
+def validate_readiness_configuration(modules: list[dict]) -> None:
+    skill_names = [str(item.get("skill_name", "")).strip() for item in modules]
+    unique_skill_names = {name for name in skill_names if name}
+
+    if len(unique_skill_names) != len(skill_names):
+        raise SystemExit(
+            "[build_site] Duplicate or missing skill_name values detected in module index; "
+            "readiness classification requires unique skill names."
+        )
+
+    overlapping = PRODUCTION_READY_SKILLS & PUBLIC_BETA_SKILLS
+    if overlapping:
+        overlap_list = ", ".join(sorted(overlapping))
+        raise SystemExit(
+            "[build_site] Skills cannot be both production-ready and public-beta: "
+            f"{overlap_list}"
+        )
+
+    missing_production = PRODUCTION_READY_SKILLS - unique_skill_names
+    if missing_production:
+        missing_list = ", ".join(sorted(missing_production))
+        raise SystemExit(
+            "[build_site] Production-ready skill set references unknown skills: "
+            f"{missing_list}"
+        )
+
+    missing_beta = PUBLIC_BETA_SKILLS - unique_skill_names
+    if missing_beta:
+        missing_list = ", ".join(sorted(missing_beta))
+        raise SystemExit(
+            "[build_site] Public-beta skill set references unknown skills: "
+            f"{missing_list}"
+        )
+
+
 def fingerprint_files(root: Path, files: list[Path]) -> str:
     digest = hashlib.sha256()
     for path in sorted(set(files)):
@@ -404,6 +439,7 @@ def build_dataset(root: Path, repo_slug: str, repo_ref: str) -> dict:
     repo_github = f"https://github.com/{repo_slug}"
     repo_raw = f"https://raw.githubusercontent.com/{repo_slug}/{repo_ref}"
     modules, plugin_name = load_skill_modules(root, repo_raw=repo_raw, repo_github=repo_github, repo_ref=repo_ref)
+    validate_readiness_configuration(modules)
     router_skill_path = resolve_router_skill_path(root)
     quality_workflow = resolve_workflow_name(root, QUALITY_WORKFLOW_CANDIDATES)
     full_evals_workflow = resolve_workflow_name(root, FULL_EVALS_WORKFLOW_CANDIDATES)
@@ -718,6 +754,7 @@ def module_card(item: dict) -> str:
 def skill_tier_group(tier_key: str, title: str, note: str, modules: list[dict]) -> str:
     count = len(modules)
     count_label = f"{count} skill" if count == 1 else f"{count} skills"
+    count_badge = f'<span class="tier-count">{e(count_label)}</span>' if count > 0 else ""
     module_markup = "\n".join(module_card(item) for item in modules)
     if not module_markup:
         module_markup = '<article class="module-card module-card--empty"><p class="muted">No skills in this tier.</p></article>'
@@ -728,7 +765,7 @@ def skill_tier_group(tier_key: str, title: str, note: str, modules: list[dict]) 
         f"<h3>{e(title)}</h3>"
         f"<p>{e(note)}</p>"
         "</div>"
-        f'<span class="tier-count">{e(count_label)}</span>'
+        f"{count_badge}"
         "</div>"
         '<div class="module-grid">'
         f"{module_markup}"
@@ -945,7 +982,7 @@ def build_index_html(data: dict, domain: str | None) -> str:
     primary_command = command_block("Raw URL", "Use the router skill directly.", links["router_skill_raw"], "primary")
     onboarding_links = "\n".join(
         [
-            f'<a class="tool-pill tool-pill--primary" href="#quickstart">Start quickstart</a>',
+            '<a class="tool-pill tool-pill--primary" href="#quickstart">Start quickstart</a>',
             f'<a class="tool-pill" href="{e(links["cairo_auditor"])}" target="_blank" rel="noreferrer">Open cairo-auditor</a>',
             f'<a class="tool-pill" href="{e(links["skills_quickstart"])}" target="_blank" rel="noreferrer">Read full setup</a>',
         ]
