@@ -755,11 +755,14 @@ def skill_tier_group(tier_key: str, title: str, note: str, modules: list[dict]) 
     count = len(modules)
     count_label = f"{count} skill" if count == 1 else f"{count} skills"
     count_badge = f'<span class="tier-count">{e(count_label)}</span>' if count > 0 else ""
+    tier_safe = re.sub(r"[^a-z0-9-]", "", tier_key.lower())
+    if not tier_safe:
+        tier_safe = "experimental"
     module_markup = "\n".join(module_card(item) for item in modules)
     if not module_markup:
         module_markup = '<article class="module-card module-card--empty"><p class="muted">No skills in this tier.</p></article>'
     return (
-        f'<article class="tier-group tier-group--{e(tier_key)} reveal">'
+        f'<article class="tier-group tier-group--{e(tier_safe)} reveal">'
         '<div class="tier-head">'
         "<div>"
         f"<h3>{e(title)}</h3>"
@@ -910,6 +913,8 @@ def build_index_html(data: dict, domain: str | None) -> str:
     links = data["links"]
     scorecard = data["latest_scorecards"].get("realworld") or data["latest_scorecards"].get("deterministic")
     repo_dir = links["repo_slug"].split("/")[-1]
+    production_ready_title = READINESS_META["production-ready"]["title"]
+    public_beta_title = READINESS_META["public-beta"]["title"]
 
     stats_bar = "\n".join(
         [
@@ -1080,7 +1085,7 @@ def build_index_html(data: dict, domain: str | None) -> str:
           <button class="copy-button inline-copy" type="button" data-copy="{e_attr(links['router_skill_raw'])}">copy router url</button>
         </div>
       </div>
-      <p class="section-note">Use <code>Production Ready</code> for high-stakes audits. <code>Public Beta</code> is recommended for active development workflows.</p>
+      <p class="section-note">Use <code>{e(production_ready_title)}</code> for high-stakes audits. <code>{e(public_beta_title)}</code> is recommended for active development workflows.</p>
       <div class="tier-stack">
         {modules_html}
       </div>
