@@ -525,6 +525,10 @@ def e(value: object) -> str:
     return html.escape(str(value), quote=True)
 
 
+def e_attr(value: object) -> str:
+    return html.escape(str(value), quote=True).replace("\n", "&#10;").replace("\r", "&#13;")
+
+
 def fmt_int(value: int) -> str:
     return f"{value:,}"
 
@@ -621,7 +625,7 @@ def command_block(title: str, description: str, code: str, accent: str = "") -> 
         f'<article class="command-card{modifier} reveal">'
         '<div class="command-head">'
         f"<div><h2>{e(title)}</h2><p>{e(description)}</p></div>"
-        f'<button class="copy-button" type="button" data-copy="{e(code)}" aria-label="Copy {e(title)}">copy</button>'
+        f'<button class="copy-button" type="button" data-copy="{e_attr(code)}" aria-label="Copy {e(title)}">copy</button>'
         "</div>"
         f'<pre><code>{e(code)}</code></pre>'
         "</article>"
@@ -636,10 +640,10 @@ def quickstart_card(sigil: str, surface: str, install: str, run: str, expected: 
         f"<h3>{e(surface)}</h3>"
         "</div>"
         '<p class="meta-label">Install</p>'
-        f'<button class="copy-button inline-copy" type="button" data-copy="{e(install)}" aria-label="Copy {e(surface)} install command">copy install</button>'
+        f'<button class="copy-button inline-copy" type="button" data-copy="{e_attr(install)}" aria-label="Copy {e(surface)} install command">copy install</button>'
         f'<pre><code>{e(install)}</code></pre>'
         '<p class="meta-label">Run</p>'
-        f'<button class="copy-button inline-copy" type="button" data-copy="{e(run)}" aria-label="Copy {e(surface)} run prompt">copy run</button>'
+        f'<button class="copy-button inline-copy" type="button" data-copy="{e_attr(run)}" aria-label="Copy {e(surface)} run prompt">copy run</button>'
         f'<pre><code>{e(run)}</code></pre>'
         '<p class="meta-label">Expected result</p>'
         f'<p class="section-note">{e(expected)}</p>'
@@ -668,7 +672,7 @@ def module_card(item: dict) -> str:
         f'<h3><a href="{e(item["raw_skill_url"])}" target="_blank" rel="noreferrer">{e(item["name"])}</a></h3>'
         f'<p>{e(item["description"])}</p>'
         '<div class="module-actions">'
-        f'<button class="icon-button copy-button" type="button" data-copy="{e(item["raw_skill_url"])}" aria-label="Copy raw URL for {e(item["name"])}">cp</button>'
+        f'<button class="icon-button copy-button" type="button" data-copy="{e_attr(item["raw_skill_url"])}" aria-label="Copy raw URL for {e(item["name"])}">cp</button>'
         f'<a class="icon-button" href="{e(item["raw_skill_url"])}" target="_blank" rel="noreferrer" aria-label="Open raw SKILL.md for {e(item["name"])}">raw</a>'
         f'<a class="icon-button" href="{e(item["github_url"])}" target="_blank" rel="noreferrer" aria-label="Open GitHub page for {e(item["name"])}">gh</a>'
         "</div>"
@@ -813,6 +817,7 @@ def build_index_html(data: dict, domain: str | None) -> str:
     scorecard = data["latest_scorecards"].get("realworld") or data["latest_scorecards"].get("deterministic")
     showcase_name = links.get("cairo_auditor_name", "cairo-auditor")
     verified_date = str(data.get("generated_at_utc", ""))[:10] or "n/a"
+    repo_dir = links["repo_slug"].split("/")[-1]
 
     stats_bar = "\n".join(
         [
@@ -874,7 +879,7 @@ def build_index_html(data: dict, domain: str | None) -> str:
                 "Codex",
                 "Clone and auto-discover from .agents/skills.",
                 (
-                    f"git clone {links['repo']}.git && cd starknet-agentic\n"
+                    f"git clone {links['repo']}.git && cd {repo_dir}\n"
                     "# Skills auto-discover from .agents/skills\n"
                     "# Start Codex from this repo root"
                 ),
@@ -901,7 +906,7 @@ def build_index_html(data: dict, domain: str | None) -> str:
                 "CDX",
                 "Codex",
                 (
-                    f"git clone {links['repo']}.git && cd starknet-agentic\n"
+                    f"git clone {links['repo']}.git && cd {repo_dir}\n"
                     "# Skills auto-discover from .agents/skills\n"
                     "# Start Codex from this repo root"
                 ),
@@ -1041,7 +1046,7 @@ def build_index_html(data: dict, domain: str | None) -> str:
         </div>
         <div class="section-links">
           <a href="{e(links['router_skill_github'])}" target="_blank" rel="noreferrer">router</a>
-          <button class="copy-button inline-copy" type="button" data-copy="{e(links['router_skill_raw'])}">copy router url</button>
+          <button class="copy-button inline-copy" type="button" data-copy="{e_attr(links['router_skill_raw'])}">copy router url</button>
         </div>
       </div>
       <div class="module-grid">
