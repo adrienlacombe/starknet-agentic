@@ -50,7 +50,7 @@ When degraded:
 | Stage | Model | Evidence | Status |
 |-------|-------|----------|--------|
 | Scope discovery | n/a | `{workdir}/cairo-audit-files.txt` (N files) | OK |
-| Threat intel enrichment (optional) | n/a | `{workdir}/cairo-audit-threat-intel.md` | OK / SKIPPED / FAILED |
+| Threat intel enrichment (optional) | n/a | `{workdir}/cairo-audit-threat-intel.md` | OK / `SKIPPED: <reason>` / `FAILED: <reason>` |
 | Agent 1 vector scan | `<actual model label>` | `{workdir}/cairo-audit-agent-1-bundle.md` (N lines) | OK |
 | Agent 2 vector scan | `<actual model label>` | `{workdir}/cairo-audit-agent-2-bundle.md` (N lines) | OK |
 | Agent 3 vector scan | `<actual model label>` | `{workdir}/cairo-audit-agent-3-bundle.md` (N lines) | OK |
@@ -154,6 +154,7 @@ When degraded:
 - In non-deep modes, keep Agent 5 row with `Status: SKIPPED`.
 - `Execution Trace` evidence paths must reference `{workdir}` (resolved from `CAIRO_AUDITOR_WORKDIR` or a per-run private temp directory).
 - Keep the optional threat-intel row in the execution trace. Use `SKIPPED` when intel fetch is unavailable/offline.
+- For threat-intel stage, include explicit reason details (`SKIPPED: no curl`, `SKIPPED: offline`, or `FAILED: curl error <code>`).
 - If any specialist is unavailable and degraded mode is explicitly enabled, set `Execution Integrity: DEGRADED` and include the warning line under Scope.
 - If scope discovery or any required stage (Agents 1-4 and Agent 5 in deep mode) has `Status: FAILED` and degraded mode is not explicitly enabled, set `Execution Integrity: FAILED` and abort report generation (no findings output).
 - If degraded execution is used, repeat the warning again immediately before `Findings Index`.

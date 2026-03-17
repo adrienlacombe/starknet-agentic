@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import unittest
 from pathlib import Path
@@ -20,24 +21,48 @@ class SyncCairoAuditorReleaseTests(unittest.TestCase):
             check=False,
         )
 
+    def current_versions(self) -> tuple[str, str]:
+        skill_version = (self.root / "skills" / "cairo-auditor" / "VERSION").read_text(
+            encoding="utf-8"
+        ).strip()
+        plugin_version = json.loads(
+            (self.root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
+        )["version"]
+        return skill_version, plugin_version
+
+    @staticmethod
+    def bump_patch(version: str) -> str:
+        parts = version.split(".")
+        if len(parts) < 3:
+            raise AssertionError(f"expected semantic version with 3 parts, got {version}")
+        major, minor, patch = parts[:3]
+        return f"{major}.{minor}.{int(patch) + 1}"
+
     def test_dry_run_reports_no_change_for_current_versions(self) -> None:
+        skill_version, plugin_version = self.current_versions()
         proc = self.run_script(
             "--skill-version",
-            "0.2.1",
+            skill_version,
             "--plugin-version",
-            "1.0.3",
+            plugin_version,
             "--dry-run",
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertIn("DRY-RUN: skill=0.2.1, plugin=1.0.3", proc.stdout)
+        self.assertIn(
+            f"DRY-RUN: skill={skill_version}, plugin={plugin_version}",
+            proc.stdout,
+        )
         self.assertIn("skills/cairo-auditor/VERSION: unchanged", proc.stdout)
 
     def test_dry_run_reports_changes_for_new_versions(self) -> None:
+        skill_version, plugin_version = self.current_versions()
+        next_skill = self.bump_patch(skill_version)
+        next_plugin = self.bump_patch(plugin_version)
         proc = self.run_script(
             "--skill-version",
-            "0.2.2",
+            next_skill,
             "--plugin-version",
-            "1.0.4",
+            next_plugin,
             "--dry-run",
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)

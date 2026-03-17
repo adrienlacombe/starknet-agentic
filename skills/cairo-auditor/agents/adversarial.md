@@ -20,18 +20,18 @@ Return findings only in your final response. Do not emit draft findings during a
 
 ## Workflow
 
-1. Read all in-scope `.cairo` files, `../references/judging.md`, and `../references/report-formatting.md` first.
+1. Read all in-scope `.cairo` files, `../references/judging.md`, and `../references/report-formatting.md` first. If available, also read `{workdir}/cairo-audit-threat-intel.md` as a prioritization hint only.
 2. Build candidate exploit chains and classify each into one bucket:
    - `DROP` (no concrete in-scope path, unreachable, or already guarded),
    - `INVESTIGATE` (plausible but incomplete),
    - `CONFIRM` (concrete path to impact and likely reportable).
 3. For every `INVESTIGATE`/`CONFIRM`, run FP gate immediately from `../references/judging.md`.
    - If any FP check fails -> `DROP` and move on.
-4. For survivors, produce one-line verdict traces before final formatting:
+4. For survivors, produce one-line verdict traces in internal reasoning only (never in final output):
    - `AX1 | path: entry() -> helper() -> sink() | guard: none | verdict: CONFIRM [88]`
    - `AX2 | path: set_*() -> write() | guard: assert_only_owner | verdict: DROP (FP gate 3: guarded)`
 5. Run one composability pass if 2+ findings survive (compound impact across functions/modules).
-6. Return only final finding blocks (or `No findings.`).
+6. Return only final finding blocks (or `No findings.`). Do not output verdict traces.
 
 ## Candidate Format
 

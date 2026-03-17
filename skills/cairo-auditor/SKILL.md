@@ -2,7 +2,7 @@
 name: cairo-auditor
 description: Security audit of Cairo/Starknet code. Trigger on "audit", "check this contract", "review for security". Modes - default (full repo), deep (+ adversarial reasoning), or specific filenames.
 license: Apache-2.0
-metadata: {"author":"starknet-agentic","version":"0.2.1","org":"keep-starknet-strange","source":"starknet-agentic"}
+metadata: {"author":"starknet-agentic","version":"0.2.2","org":"keep-starknet-strange","source":"starknet-agentic"}
 keywords: [cairo, starknet, security, audit, vulnerabilities, semgrep]
 allowed-tools: [Bash, Read, Glob, Grep, Task, Agent]
 user-invocable: true
@@ -99,6 +99,12 @@ Before Turn 1 when mode is `deep`, run a lightweight capability preflight and em
 - Detect host family: `codex`, `claude-code`, or `unknown`.
 - Verify Agent tool availability and ability to spawn specialist agents.
 - Deep mode requires 5 specialist agents total (Agents 1-4 + Agent 5 adversarial).
+- Verify threat-intel fetch capability via Bash:
+  - `command -v curl` must succeed, and
+  - `curl -sfI --connect-timeout 5 --max-time 10 https://starknet.io` must succeed.
+- For `codex` hosts, probe preferred model availability before spawn:
+  - run one lightweight specialist probe using `model: gpt-5.4`,
+  - persist success/failure and fallback decision.
 - Persist preflight evidence to `{workdir}/cairo-audit-host-capabilities.json` when the probe is available.
 
 If preflight fails (in hosts where preflight is enabled):
@@ -116,15 +122,15 @@ Remediation hints to print when preflight fails:
 Select specialist model labels from detected host before spawning:
 
 - `claude-code`
-  - `VECTOR_MODEL=sonnet`
-  - `ADVERSARIAL_MODEL=opus`
+  - `VECTOR_MODEL=sonnet` (host alias for `claude-sonnet-4-6`)
+  - `ADVERSARIAL_MODEL=opus` (host alias for `claude-opus-4-6`)
 - `codex`
   - `VECTOR_MODEL=gpt-5.4`
   - `ADVERSARIAL_MODEL=gpt-5.4`
-  - If `gpt-5.4` is unavailable and `--strict-models` is not set, fallback to `gpt-5-codex` for both.
+  - If `gpt-5.4` probe fails and `--strict-models` is not set, fallback to `gpt-5.2` for both.
 - `unknown`
-  - `VECTOR_MODEL=sonnet`
-  - `ADVERSARIAL_MODEL=opus`
+  - `VECTOR_MODEL=sonnet` (host alias for `claude-sonnet-4-6`)
+  - `ADVERSARIAL_MODEL=opus` (host alias for `claude-opus-4-6`)
 
 Persist the selected plan to `{workdir}/cairo-audit-model-plan.txt` and keep model labels in the execution trace as observed runtime values (not assumptions).
 
@@ -253,18 +259,23 @@ for i in 1 2 3 4; do
 done
 ```
 
-Do NOT read or inline any file content into agent prompts — the bundle files replace that entirely.
+Do NOT inline source-code files into prompts. Bundles replace raw source in prompts. Non-code context blocks (deterministic preflight summary and optional threat-intel summary) may be appended.
 
 **Turn 2.5 — Threat Intel Enrichment (Deep Mode, Optional).**
 
 When network access is available, run a small enrichment pass and write `{workdir}/cairo-audit-threat-intel.md`:
 
 - Read `{refs_root}/threat-intel-sources.md` first and follow its source policy.
-- Query only primary-source security material (official audit reports, incident postmortems, protocol docs, vendor writeups).
+- Use `curl` through Bash as the query mechanism for primary-source security material (official audit reports, incident postmortems, protocol docs, vendor writeups).
+- Execute pre-checks before querying:
+  - if `curl` is missing, mark this stage `SKIPPED: no curl`,
+  - if connectivity check fails, mark this stage `SKIPPED: offline`.
 - Keep it bounded: max 6 sources and max 12 extracted signals.
 - Normalize each signal into: `date`, `source`, `class hint`, `one-line exploit shape`.
 - Prefer Cairo/Starknet first; if sparse, include high-signal EVM analogs that map to listed vectors.
+- If a fetch command fails after pre-check, mark `FAILED: curl error <code>` in execution trace and continue.
 - If unavailable/offline, continue and mark this stage as `SKIPPED` in execution trace.
+- Keep query commands/examples aligned with `threat-intel-sources.md`.
 
 Threat-intel usage rules:
 
@@ -283,17 +294,19 @@ Threat-intel usage rules:
 
 - Resolve host-aware model labels first:
   - write `{workdir}/cairo-audit-model-plan.txt` with `host`, `vector_model`, and `adversarial_model`.
+  - include preflight probe fields when available: `gpt_5_4_probe` and `fallback_reason`.
   - use that resolved `vector_model` for Agents 1–4 and `adversarial_model` for Agent 5.
 
-- **Agents 1–4** (vector scanning) — spawn with `model: "{vector_model}"`. Each agent prompt must contain the full text of `vector-scan.md` (read in Turn 2, paste into every prompt). After the instructions, add: `Your bundle file is {workdir}/cairo-audit-agent-N-bundle.md (XXXX lines).` (substitute the real line count). Include the deterministic preflight results if available so agents have extra context.
+- **Agents 1–4** (vector scanning) — spawn with `model: "{vector_model}"`. Each agent prompt must contain the full text of `vector-scan.md` (read in Turn 2, paste into every prompt). After the instructions, add: `Your bundle file is {workdir}/cairo-audit-agent-N-bundle.md (XXXX lines).` (substitute the real line count). Include deterministic preflight results if available. If `{workdir}/cairo-audit-threat-intel.md` exists and has normalized signals, append a compact "Threat Intel (hints only)" block (max 12 lines) to each prompt.
 
 - **Agent 5** (adversarial reasoning, **deep** mode only) — spawn with `model: "{adversarial_model}"`. The prompt must instruct it to:
   1. Read `{skill_root}/agents/adversarial.md` for its full instructions.
   2. Read `{refs_root}/judging.md` and `{refs_root}/report-formatting.md`.
-  3. Read `{workdir}/cairo-audit-files.txt` to obtain in-scope paths, then read only those `.cairo` files directly (not via bundle).
-  4. Reason freely — no attack vector reference. Look for logic errors, unsafe interactions, access control gaps, economic exploits, multi-step cross-function chains.
-  5. Apply FP gate to each finding immediately.
-  6. Format findings per report-formatting.md.
+  3. If present, read `{workdir}/cairo-audit-threat-intel.md` as a prioritization hint only.
+  4. Read `{workdir}/cairo-audit-files.txt` to obtain in-scope paths, then read only those `.cairo` files directly (not via bundle).
+  5. Reason freely — no attack vector reference. Look for logic errors, unsafe interactions, access control gaps, economic exploits, multi-step cross-function chains.
+  6. Apply FP gate to each finding immediately.
+  7. Format findings per report-formatting.md.
 
 After spawning, persist execution evidence that will be reused in the final report:
 - confirm `{workdir}/cairo-audit-files.txt` exists and count in-scope files,

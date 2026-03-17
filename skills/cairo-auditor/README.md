@@ -88,8 +88,8 @@ Deep mode needs 5 specialist agents (4 vector + 1 adversarial).
 
 Model routing is host-aware:
 
-- `claude-code`: vector specialists use `sonnet`, adversarial specialist uses `opus`.
-- `codex`: vector + adversarial specialists prefer `gpt-5.4` (fallback `gpt-5-codex` if unavailable).
+- `claude-code`: vector specialists use `sonnet`, adversarial specialist uses `opus` (host runtime aliases).
+- `codex`: vector + adversarial specialists prefer `gpt-5.4` (fallback `gpt-5.2` when probe fails and strict mode is off).
 - execution trace always records observed runtime model labels.
 
 Large-file behavior:
@@ -100,7 +100,7 @@ Large-file behavior:
 Optional threat-intel enrichment (deep mode):
 
 - pulls bounded primary-source security signals into `{workdir}/cairo-audit-threat-intel.md`,
-- helps prioritize vectors,
+- is passed to specialists as prioritization hints (never as direct findings),
 - never creates findings by itself (local in-scope FP-gated proof is still required).
 
 ### Full-power verification
