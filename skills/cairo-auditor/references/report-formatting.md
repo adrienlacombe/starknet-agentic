@@ -124,6 +124,8 @@ When degraded:
 
 ---
 
+When degraded:
+
 `WARNING: degraded execution may omit exploitable paths`
 
 ---
