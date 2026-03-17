@@ -154,7 +154,7 @@ When degraded:
 ## Rules
 
 - Follow the template above exactly.
-- Always include `Signal Summary`, `Scope`, `Execution Trace`, `Findings`, `Dropped Candidates`, and `Findings Index` in that order.
+- Default section order is `Signal Summary`, `Scope`, `Execution Trace`, `Findings`, `Dropped Candidates`, then `Findings Index`.
 - In `Signal Summary`, `Total` must equal `Critical + High + Medium + Low`. If any input `Total` differs, recompute and overwrite it.
 - `Execution Trace` must include scope discovery and Agents 1-4 for every run.
 - In deep mode, `Execution Trace` must include Agent 5 with actual model label and status.
@@ -163,7 +163,7 @@ When degraded:
 - Keep the optional threat-intel row in the execution trace. Use `SKIPPED` when intel fetch is unavailable/offline.
 - For threat-intel stage, include explicit reason details (`SKIPPED: no curl`, `SKIPPED: offline`, or `FAILED: curl error <code>`).
 - If any specialist is unavailable and degraded mode is explicitly enabled, set `Execution Integrity: DEGRADED` and include the warning line under Scope.
-- If scope discovery or any required stage (Agents 1-4 and Agent 5 in deep mode) has `Status: FAILED` and degraded mode is not explicitly enabled, set `Execution Integrity: FAILED` and abort report generation (no findings output).
+- If scope discovery or any required stage (Agents 1-4 and Agent 5 in deep mode) has `Status: FAILED` and degraded mode is not explicitly enabled, set `Execution Integrity: FAILED` and stop after `Execution Trace` (do not emit `Findings`, `Dropped Candidates`, or `Findings Index`).
 - If degraded execution is used, repeat the warning again immediately before `Findings Index`.
 - Sort findings by priority (`P0` first); within each priority tier, sort by confidence (highest first).
 - Findings below threshold (confidence < 75) get a description but no **Fix** block and no **Required Tests** block.
