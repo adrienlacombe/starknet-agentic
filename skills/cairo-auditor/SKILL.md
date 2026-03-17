@@ -2,7 +2,7 @@
 name: cairo-auditor
 description: Security audit of Cairo/Starknet code. Trigger on "audit", "check this contract", "review for security". Modes - default (full repo), deep (+ adversarial reasoning), or specific filenames.
 license: Apache-2.0
-metadata: {"author":"starknet-agentic","version":"0.2.0","org":"keep-starknet-strange","source":"starknet-agentic"}
+metadata: {"author":"starknet-agentic","version":"0.2.1","org":"keep-starknet-strange","source":"starknet-agentic"}
 keywords: [cairo, starknet, security, audit, vulnerabilities, semgrep]
 allowed-tools: [Bash, Read, Glob, Grep, Task, Agent]
 user-invocable: true
@@ -108,6 +108,23 @@ Remediation hints to print when preflight fails:
 
 - `codex`: `codex features enable multi_agent`, then verify with `codex features list`, then restart the session.
 - `claude-code`: run `/reload-plugins`, update the installed plugin if needed, and retry deep mode.
+
+## Host-Aware Model Routing
+
+Select specialist model labels from detected host before spawning:
+
+- `claude-code`
+  - `VECTOR_MODEL=sonnet`
+  - `ADVERSARIAL_MODEL=opus`
+- `codex`
+  - `VECTOR_MODEL=gpt-5.4`
+  - `ADVERSARIAL_MODEL=gpt-5.4`
+  - If `gpt-5.4` is unavailable, fallback to `gpt-5-codex` for both.
+- `unknown`
+  - `VECTOR_MODEL=sonnet`
+  - `ADVERSARIAL_MODEL=opus`
+
+Persist the selected plan to `{workdir}/cairo-audit-model-plan.txt` and keep model labels in the execution trace as observed runtime values (not assumptions).
 
 ## Orchestration
 
@@ -230,6 +247,23 @@ done
 
 Do NOT read or inline any file content into agent prompts — the bundle files replace that entirely.
 
+**Turn 2.5 — Threat Intel Enrichment (Deep Mode, Optional).**
+
+When network access is available, run a small enrichment pass and write `{workdir}/cairo-audit-threat-intel.md`:
+
+- Read `{refs_root}/threat-intel-sources.md` first and follow its source policy.
+- Query only primary-source security material (official audit reports, incident postmortems, protocol docs, vendor writeups).
+- Keep it bounded: max 6 sources and max 12 extracted signals.
+- Normalize each signal into: `date`, `source`, `class hint`, `one-line exploit shape`.
+- Prefer Cairo/Starknet first; if sparse, include high-signal EVM analogs that map to listed vectors.
+- If unavailable/offline, continue and mark this stage as `SKIPPED` in execution trace.
+
+Threat-intel usage rules:
+
+- Intel is a prioritization aid only.
+- Never report a finding from intel alone.
+- Every reported finding must still pass the local FP gate with a concrete in-scope path.
+
 **Turn 3 — Spawn.** Use foreground Agent tool calls only (do NOT use `run_in_background`).
 
 - Always spawn Agents 1–4 in parallel.
@@ -239,9 +273,13 @@ Do NOT read or inline any file content into agent prompts — the bundle files r
     1. Wave A: Agents 1–4 in parallel.
     2. Wave B: Agent 5 after Wave A completes.
 
-- **Agents 1–4** (vector scanning) — spawn with `model: "sonnet"`. Each agent prompt must contain the full text of `vector-scan.md` (read in Turn 2, paste into every prompt). After the instructions, add: `Your bundle file is {workdir}/cairo-audit-agent-N-bundle.md (XXXX lines).` (substitute the real line count). Include the deterministic preflight results if available so agents have extra context.
+- Resolve host-aware model labels first:
+  - write `{workdir}/cairo-audit-model-plan.txt` with `host`, `vector_model`, and `adversarial_model`.
+  - use that resolved `vector_model` for Agents 1–4 and `adversarial_model` for Agent 5.
 
-- **Agent 5** (adversarial reasoning, **deep** mode only) — spawn with `model: "opus"`. The prompt must instruct it to:
+- **Agents 1–4** (vector scanning) — spawn with `model: "{vector_model}"`. Each agent prompt must contain the full text of `vector-scan.md` (read in Turn 2, paste into every prompt). After the instructions, add: `Your bundle file is {workdir}/cairo-audit-agent-N-bundle.md (XXXX lines).` (substitute the real line count). Include the deterministic preflight results if available so agents have extra context.
+
+- **Agent 5** (adversarial reasoning, **deep** mode only) — spawn with `model: "{adversarial_model}"`. The prompt must instruct it to:
   1. Read `{skill_root}/agents/adversarial.md` for its full instructions.
   2. Read `{refs_root}/judging.md` and `{refs_root}/report-formatting.md`.
   3. Read `{workdir}/cairo-audit-files.txt` to obtain in-scope paths, then read only those `.cairo` files directly (not via bundle).

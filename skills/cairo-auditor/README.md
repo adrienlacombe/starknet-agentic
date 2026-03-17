@@ -86,10 +86,22 @@ Deep mode needs 5 specialist agents (4 vector + 1 adversarial).
 - Use `--allow-degraded` only when you intentionally accept reduced coverage.
 - For Codex stability, keep CLI updated (`npm i -g @openai/codex`).
 
+Model routing is host-aware:
+
+- `claude-code`: vector specialists use `sonnet`, adversarial specialist uses `opus`.
+- `codex`: vector + adversarial specialists prefer `gpt-5.4` (fallback `gpt-5-codex` if unavailable).
+- execution trace always records observed runtime model labels.
+
 Large-file behavior:
 
 - If the largest in-scope file exceeds `1000` lines **or** any bundle exceeds `1400` lines, deep mode runs in two waves (Agents 1-4, then Agent 5) and uses longer stall timeouts.
 - This preserves full-power coverage while reducing transport drop risk.
+
+Optional threat-intel enrichment (deep mode):
+
+- pulls bounded primary-source security signals into `{workdir}/cairo-audit-threat-intel.md`,
+- helps prioritize vectors,
+- never creates findings by itself (local in-scope FP-gated proof is still required).
 
 ### Deterministic local scan (no AI)
 
@@ -127,7 +139,7 @@ The skill orchestrates a **4-turn pipeline**:
 
 1. **Discover** — find in-scope `.cairo` files, run deterministic preflight
 2. **Prepare** — build 4 code bundles, each with a different attack-vector partition
-3. **Spawn** — 4 parallel vector specialists (`model: sonnet`), optionally + 1 adversarial (`model: opus` in deep mode)
+3. **Spawn** — 4 parallel vector specialists + optional adversarial specialist with host-aware model routing
 4. **Report** — merge, deduplicate by root cause, sort by confidence, emit findings
 
 Each agent scans the full codebase against 30 attack vectors from its partition (120 total), applies a strict false-positive gate, and formats findings with exploit paths and fix diffs.
@@ -162,9 +174,10 @@ cairo-auditor/
     adversarial.md             # adversarial specialist instructions
   references/
     attack-vectors/            # 120 vectors in 4 partitions
-    vulnerability-db/          # 13 canonical vulnerability classes
+    vulnerability-db/          # canonical vulnerability classes
     judging.md                 # FP gate + confidence scoring
     report-formatting.md       # finding template + priority mapping
+    threat-intel-sources.md    # source policy for optional web enrichment
     semgrep/                   # optional Semgrep auxiliary rules
   scripts/
     README.md                  # runnable helpers and script entrypoints
