@@ -27,9 +27,9 @@ skill-installer install https://github.com/keep-starknet-strange/starknet-agenti
 ```
 
 ```text
-# 2) Prompt (Codex or Claude Code)
-Use $cairo-auditor in deep mode on src/lib.cairo --file-output.
-Output only the final report.
+# 2) Prompt
+Codex: Run cairo-auditor deep on src/lib.cairo with --file-output. Output only the final report.
+Claude Code: /starknet-agentic-skills:cairo-auditor deep src/lib.cairo --file-output
 ```
 
 ```bash

@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +17,7 @@ DEFAULT_REPO_SLUG = "keep-starknet-strange/starknet-agentic"
 DEFAULT_PUBLIC_REF = "main"
 DEFAULT_PINNED_REF = "v0.2.2"
 SKILL_VERSION_FILE = Path("skills") / "cairo-auditor" / "VERSION"
-VERSION_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$")
+VERSION_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$")
 PUBLIC_SKILLS = [
     "account-abstraction",
     "cairo-auditor",
@@ -43,15 +44,15 @@ def _version_pinned_ref(root: Path = ROOT) -> str:
     try:
         version = version_file.read_text(encoding="utf-8").strip()
     except OSError:
+        if root.resolve() == ROOT.resolve():
+            warnings.warn(
+                f"VERSION file not found at {version_file}; falling back to DEFAULT_PINNED_REF={DEFAULT_PINNED_REF!r}",
+                stacklevel=2,
+            )
         return DEFAULT_PINNED_REF
     if not VERSION_PATTERN.match(version):
         return DEFAULT_PINNED_REF
     return version if version.startswith("v") else f"v{version}"
-
-
-def _latest_release_ref(root: Path = ROOT) -> str:
-    # Keep this shim for backwards compatibility in tests/imports.
-    return _version_pinned_ref(root)
 
 
 def _resolved_repo_slug() -> str:
