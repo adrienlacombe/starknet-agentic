@@ -17,6 +17,28 @@ Not a substitute for a formal audit — but the check you should never skip.
   <img alt="deterministic smoke" src="https://img.shields.io/badge/deterministic%20smoke-pass-2ea043" />
 </p>
 
+## 30-Second Happy Path
+
+Install one skill, run one deep audit, verify execution integrity.
+
+```bash
+# 1) Install (Codex)
+skill-installer install https://github.com/keep-starknet-strange/starknet-agentic/tree/main/skills/cairo-auditor
+```
+
+```text
+# 2) Prompt (Codex or Claude Code)
+Use $cairo-auditor in deep mode on src/lib.cairo --file-output.
+Output only the final report.
+```
+
+```bash
+# 3) Verify full-power execution markers
+bash skills/cairo-auditor/scripts/doctor.sh --report-dir .
+```
+
+Expected markers: `Execution Integrity: FULL`, `## Execution Trace`, Agent 1-4 vector rows, and Agent 5 adversarial row.
+
 ## Example output
 
 Every finding includes a vulnerability class, file location, confidence score, exploit description, fix diff, and required tests.
@@ -32,7 +54,7 @@ Signal Summary
 
 [P0] 1. Ungated Upgrade Path
 
-  Class: NO_ACCESS_CONTROL_MUTATION · src/contracts/account.cairo:42 · Confidence: 92 · Severity: Critical · [CODE-TRACE] [PREFLIGHT-HIT]
+  Class: NO_ACCESS_CONTROL_MUTATION · src/contracts/account.cairo:42 · Confidence: 92 · Severity: Critical · `[CODE-TRACE] [PREFLIGHT-HIT]`
 
   Description
   External upgrade() calls replace_class_syscall without caller gate.
@@ -52,7 +74,7 @@ Signal Summary
 
 [P2] 2. Stale Snapshot in View Function
 
-  Class: STALE-SNAPSHOT-READ · src/contracts/registry.cairo:187 · Confidence: 62 · Severity: Medium · [CODE-TRACE]
+  Class: STALE-SNAPSHOT-READ · src/contracts/registry.cairo:187 · Confidence: 62 · Severity: Medium · `[CODE-TRACE]`
 
   Description
   get_metadata reads a snapshot that may lag behind the latest write in the
@@ -113,6 +135,8 @@ Inside Claude Code, run:
 
 Then restart Claude Code or run `/reload-plugins`.
 
+Note: Claude plugin bundle versions (for example `starknet-agentic-skills 1.0.4`) are intentionally separate from this skill's internal version (`cairo-auditor 0.2.2`).
+
 ### Codex
 
 `skill-installer` is a third-party CLI. Install it first if you don't have it:
@@ -132,8 +156,10 @@ Restart Codex, open `/skills`, then invoke `cairo-auditor`.
 For reproducible installs, pin to a release tag or commit SHA:
 
 ```bash
-skill-installer install https://github.com/keep-starknet-strange/starknet-agentic/tree/v0.1.0-beta.1/skills/cairo-auditor
+skill-installer install https://github.com/keep-starknet-strange/starknet-agentic/tree/v0.2.2/skills/cairo-auditor
 ```
+
+If your mirror does not yet expose `v0.2.2`, use `tree/main` temporarily.
 
 ### Agent Skills CLI
 
