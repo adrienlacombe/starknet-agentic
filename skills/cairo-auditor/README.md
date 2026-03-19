@@ -1,7 +1,3 @@
-<p align="center">
-  <img alt="cairo-auditor hero" src="../assets/cairo-auditor-hero.svg" width="100%" />
-</p>
-
 # cairo-auditor
 
 A security agent for Cairo/Starknet — findings in minutes, not weeks.
@@ -21,13 +17,30 @@ Not a substitute for a formal audit — but the check you should never skip.
   <img alt="deterministic smoke" src="https://img.shields.io/badge/deterministic%20smoke-pass-2ea043" />
 </p>
 
-<!-- TODO: add demo GIF once recorded -->
-<!-- ## Demo -->
-<!-- ![Running cairo-auditor in terminal](assets/demo.gif) -->
-
 ## Install
 
-**Codex (public GitHub install):**
+Pick **one** path that matches your host:
+
+### Claude Code (recommended)
+
+Inside Claude Code, run:
+
+```text
+/plugin marketplace add keep-starknet-strange/starknet-agentic
+/plugin install starknet-agentic-skills@starknet-agentic-skills --scope local
+```
+
+Then restart Claude Code or run `/reload-plugins`.
+
+### Codex
+
+`skill-installer` is a third-party CLI. Install it first if you don't have it:
+
+```bash
+npm install -g skill-installer
+```
+
+Then install the skill:
 
 ```bash
 skill-installer install https://github.com/keep-starknet-strange/starknet-agentic/tree/main/skills/cairo-auditor
@@ -35,33 +48,31 @@ skill-installer install https://github.com/keep-starknet-strange/starknet-agenti
 
 Restart Codex, open `/skills`, then invoke `cairo-auditor`.
 
-**Codex (reproducible pin):**
+For reproducible installs, pin to a release tag or commit SHA:
 
 ```bash
 skill-installer install https://github.com/keep-starknet-strange/starknet-agentic/tree/v0.1.0-beta.1/skills/cairo-auditor
 ```
 
-Pinned ref policy: use released tags (or immutable commit SHAs) for reproducible installs.
-
-**Claude Code plugin marketplace:**
-
-```bash
-/plugin marketplace add keep-starknet-strange/starknet-agentic
-/plugin install starknet-agentic-skills@starknet-agentic-skills --scope local
-/reload-plugins
-```
-
-**Agent Skills CLI:**
+### Agent Skills CLI
 
 ```bash
 npx skills add keep-starknet-strange/starknet-agentic/skills/cairo-auditor
+```
+
+### Manual (any host)
+
+Clone the repo and point your agent's skill config at the local path:
+
+```bash
+git clone https://github.com/keep-starknet-strange/starknet-agentic.git
+# Then configure your host to load skills/cairo-auditor/SKILL.md
 ```
 
 Related docs:
 
 - [2-minute quickstart](../QUICKSTART_2MIN.md)
 - [troubleshooting matrix](../TROUBLESHOOTING.md)
-- [Claude marketplace submission runbook](../../docs/CLAUDE_MARKETPLACE_SUBMISSION.md)
 
 ## Usage
 
@@ -123,13 +134,13 @@ Expected:
 
 **Claude Code**
 
-```bash
-/plugin marketplace list
-/plugin list
-/reload-plugins
+Verify the plugin is loaded by running inside Claude Code:
+
+```text
+/starknet-agentic-skills:cairo-auditor deep
 ```
 
-Then run deep mode and verify the generated report includes:
+Then verify the generated report includes:
 
 - `Execution Trace` rows for Agents 1-4 and Agent 5 adversarial,
 - observed model labels (`sonnet` vectors, `opus` adversarial),
