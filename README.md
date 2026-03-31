@@ -1,5 +1,12 @@
 # Starknet Agentic
 
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ starknet-agentic                                            │
+│ contracts • runtimes • skills for policy-enforced agents    │
+└──────────────────────────────────────────────────────────────┘
+```
+
 [![CI](https://github.com/keep-starknet-strange/starknet-agentic/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/keep-starknet-strange/starknet-agentic/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/keep-starknet-strange/starknet-agentic/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/keep-starknet-strange/starknet-agentic/actions/workflows/codeql.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
