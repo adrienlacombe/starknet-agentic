@@ -69,7 +69,8 @@ Output only the final report.
 Create a minimal vulnerable contract locally and audit that file instead:
 
 ```bash
-cat > /tmp/test_vuln.cairo <<'EOF'
+TMP_CAIRO_FILE="$(mktemp "${TMPDIR:-/tmp}/cairo-auditor-demo.XXXXXX.cairo")"
+cat > "$TMP_CAIRO_FILE" <<'EOF'
 #[starknet::contract]
 mod VulnerableUpgrade {
     use starknet::ClassHash;
@@ -84,13 +85,20 @@ mod VulnerableUpgrade {
     }
 }
 EOF
+printf 'Demo contract written to %s\n' "$TMP_CAIRO_FILE"
 ```
 
 Windows users: create the same contents in a local file such as `test_vuln.cairo` with your editor or PowerShell, then run the same prompt against that file path.
 
 ```text
-Run cairo-auditor on /tmp/test_vuln.cairo with --file-output.
+# Codex prompt
+Run cairo-auditor on the temp file path printed above with --file-output.
 Output only the final report.
+```
+
+```text
+# Claude Code command
+/starknet-agentic-skills:cairo-auditor <temp-file-path> --file-output
 ```
 
 This should yield an upgrade-related finding against the ungated `replace_class_syscall` path.

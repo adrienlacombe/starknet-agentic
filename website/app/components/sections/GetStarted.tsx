@@ -38,7 +38,7 @@ export function GetStarted() {
                 Try Cairo Auditor First
               </h3>
               <p className="text-neo-dark/70 max-w-2xl">
-                Install the skill once, then run it on any local Cairo contract in your own workspace to generate a real{" "}
+                After installing the skill from the 30-second guide, run it on any local Cairo contract in your own workspace to generate a real{" "}
                 <code className="px-1.5 py-0.5 bg-neo-dark/5 rounded text-sm">security-review-*.md</code> report before
                 you wire the rest of the stack.
               </p>
@@ -47,12 +47,12 @@ export function GetStarted() {
               href="/docs/skills/cairo-auditor"
               className="neo-btn-secondary text-sm py-2 px-4 whitespace-nowrap"
             >
-              Open 30-second guide
+              Install + 30-second guide
             </Link>
           </div>
 
           <p className="mb-4 text-sm text-neo-dark/70">
-            First time here? Install the skill first from the guide, then come back and run one of the prompts below.
+            First time here? Step 1 is the install flow in the guide. Step 2 is one of the runtime prompts below.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
