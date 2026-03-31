@@ -102,8 +102,10 @@ printf 'Demo contract written to %s\n' "$TMP_CAIRO_FILE"
 Windows users: create the same contents in a local file such as `test_vuln.cairo` with your editor or PowerShell, then run the same prompt against that file path.
 
 ```text
-Codex: Run cairo-auditor on the temp file path printed above with --file-output. Output only the final report.
-Claude Code: /starknet-agentic-skills:cairo-auditor <temp-file-path> --file-output
+macOS/Linux (Codex): Run cairo-auditor on the temp file path printed above with --file-output. Output only the final report.
+macOS/Linux (Claude Code): /starknet-agentic-skills:cairo-auditor <temp-file-path> --file-output
+Windows (Codex): Run cairo-auditor on .\test_vuln.cairo with --file-output. Output only the final report.
+Windows (Claude Code): /starknet-agentic-skills:cairo-auditor .\test_vuln.cairo --file-output
 ```
 
 You should see an upgrade-related finding against the ungated `replace_class_syscall` path.

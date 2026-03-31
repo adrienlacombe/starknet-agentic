@@ -92,13 +92,16 @@ Windows users: create the same contents in a local file such as `test_vuln.cairo
 
 ```text
 # Codex prompt
-Run cairo-auditor on the temp file path printed above with --file-output.
+macOS/Linux: Run cairo-auditor on the temp file path printed above with --file-output.
+Output only the final report.
+Windows: Run cairo-auditor on .\test_vuln.cairo with --file-output.
 Output only the final report.
 ```
 
 ```text
 # Claude Code command
-/starknet-agentic-skills:cairo-auditor <temp-file-path> --file-output
+macOS/Linux: /starknet-agentic-skills:cairo-auditor <temp-file-path> --file-output
+Windows: /starknet-agentic-skills:cairo-auditor .\test_vuln.cairo --file-output
 ```
 
 This should yield an upgrade-related finding against the ungated `replace_class_syscall` path.
