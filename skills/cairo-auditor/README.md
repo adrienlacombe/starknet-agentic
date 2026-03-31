@@ -298,7 +298,7 @@ python3 /path/to/cairo-auditor/scripts/quality/audit_local_repo.py \
 
 Run this from the installed cairo-auditor skill directory, or keep using an absolute script path as shown above.
 
-This local preflight writes `<scan-id>-timestamp.md` and `<scan-id>-timestamp.json` artifacts. The `security-review-*.md` naming is used by the full hosted skill flow, not by the standalone deterministic scanner.
+This local preflight writes `<scan-id>-YYYYMMDD-HHMMSSZ.md` and `<scan-id>-YYYYMMDD-HHMMSSZ.json` artifacts. The `security-review-*.md` naming is used by the full hosted skill flow, not by the standalone deterministic scanner.
 
 ### Proven-only mode
 

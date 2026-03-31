@@ -167,7 +167,7 @@ python3 skills/cairo-auditor/scripts/quality/audit_local_repo.py \
   --scan-id my-audit
 ```
 
-This standalone preflight writes `<scan-id>-timestamp.md` and `<scan-id>-timestamp.json` artifacts. The `security-review-*.md` naming is used by the full hosted skill flow.
+This standalone preflight writes `<scan-id>-YYYYMMDD-HHMMSSZ.md` and `<scan-id>-YYYYMMDD-HHMMSSZ.json` artifacts. The `security-review-*.md` naming is used by the full hosted skill flow.
 
 <Callout type="warning" title="Deterministic scans are not full audits">
 Deterministic scorecards are regression gates, not proof of full audit sufficiency. Use them to catch drift, then run the full skill for release-critical work.
