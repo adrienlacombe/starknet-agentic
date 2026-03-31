@@ -43,20 +43,29 @@ npx create-starknet-agent@latest
 ```
 
 ```bash
-# Codex (public GitHub install, cairo-auditor)
-skill-installer install https://github.com/keep-starknet-strange/starknet-agentic/tree/main/skills/cairo-auditor
+# Codex (built-in installer, cairo-auditor)
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+python3 "$CODEX_HOME/skills/.system/skill-installer/scripts/install-skill-from-github.py" \
+  --repo keep-starknet-strange/starknet-agentic \
+  --path skills/cairo-auditor \
+  --ref main
 # Restart Codex, then run /skills and invoke cairo-auditor
 ```
 
 ```bash
-# Codex (reproducible install pinned to a released tag)
-skill-installer install https://github.com/keep-starknet-strange/starknet-agentic/tree/v0.2.2/skills/cairo-auditor
+# Codex (frozen install)
+# Replace <commit-sha> with the exact immutable revision you want to pin.
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+python3 "$CODEX_HOME/skills/.system/skill-installer/scripts/install-skill-from-github.py" \
+  --repo keep-starknet-strange/starknet-agentic \
+  --path skills/cairo-auditor \
+  --ref <commit-sha>
 ```
 
 ```bash
 # Claude Code marketplace
 /plugin marketplace add keep-starknet-strange/starknet-agentic
-/plugin install starknet-agentic-skills@starknet-agentic-skills --scope local
+/plugin install starknet-agentic-skills@starknet-agentic-skills --scope user
 /reload-plugins
 /plugin menu
 /starknet-agentic-skills:cairo-auditor
@@ -74,6 +83,15 @@ For deterministic install/usage guidance, see:
 - [docs/CLAUDE_MARKETPLACE_SUBMISSION.md](./docs/CLAUDE_MARKETPLACE_SUBMISSION.md)
 
 For the full skill catalog and Cairo migration notes, see [skills/README.md](./skills/README.md) and [docs/CAIRO_SKILLS_MIGRATION.md](./docs/CAIRO_SKILLS_MIGRATION.md).
+
+## Flagship Skills
+
+| Skill | Best for | Fast path |
+|---|---|---|
+| [`cairo-auditor`](./skills/cairo-auditor/) | Pre-merge Cairo security review with deterministic preflight and false-positive gating | [30-second quickstart](./skills/QUICKSTART_2MIN.md) |
+| [`starknet-wallet`](./skills/starknet-wallet/) | Wallet ops, transfers, session keys, paymaster flows | [Skill docs](./skills/starknet-wallet/) |
+| [`starknet-defi`](./skills/starknet-defi/) | Swaps, DCA, staking, lending, AVNU routing | [Skill docs](./skills/starknet-defi/) |
+| [`starknet-identity`](./skills/starknet-identity/) | ERC-8004 registration, reputation, validation | [Skill docs](./skills/starknet-identity/) |
 
 ## System Requirements
 

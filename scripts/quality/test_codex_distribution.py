@@ -39,24 +39,6 @@ def build_minimal_repo(root: Path, install_markers: dict[Path, list[str]]) -> No
 
 
 class CodexDistributionTests(unittest.TestCase):
-    def test_version_pinned_ref_accepts_optional_v_prefix(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            write_file(root / "skills" / "cairo-auditor" / "VERSION", "v0.2.2\n")
-
-            value = MODULE._version_pinned_ref(root)
-
-            self.assertEqual(value, "v0.2.2")
-
-    def test_version_pinned_ref_rejects_build_metadata_suffix(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            write_file(root / "skills" / "cairo-auditor" / "VERSION", "0.2.2+build.7\n")
-
-            value = MODULE._version_pinned_ref(root)
-
-            self.assertEqual(value, MODULE.DEFAULT_PINNED_REF)
-
     def test_codex_symlink_errors_passes_for_valid_symlink(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -122,7 +104,8 @@ policy:
             write_file(
                 root / "README.md",
                 "\n".join(install_markers[Path("README.md")])
-                + "\nskill-installer install https://github.com/keep-starknet-strange/starknet-agentic/tree/<ref>/skills/cairo-auditor\n",
+                + f"\n{MODULE._codex_install_script()}\n"
+                + "skill-installer install https://github.com/keep-starknet-strange/starknet-agentic/tree/<ref>/skills/cairo-auditor\n",
             )
             write_file(root / "skills" / "README.md", "\n".join(install_markers[Path("skills/README.md")]))
             write_file(
@@ -133,6 +116,25 @@ policy:
             errors = MODULE.install_doc_errors(root, install_markers)
 
             self.assertTrue(any("placeholder install markers" in error for error in errors), errors)
+
+    def test_install_doc_errors_reports_versioned_tree_marker_pattern(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install_markers = MODULE.build_install_markers(root)
+            write_file(
+                root / "README.md",
+                "\n".join(install_markers[Path("README.md")])
+                + "\nhttps://github.com/keep-starknet-strange/starknet-agentic/tree/v9.9.9/skills/cairo-auditor\n",
+            )
+            write_file(root / "skills" / "README.md", "\n".join(install_markers[Path("skills/README.md")]))
+            write_file(
+                root / "skills" / "cairo-auditor" / "README.md",
+                "\n".join(install_markers[Path("skills/cairo-auditor/README.md")]),
+            )
+
+            errors = MODULE.install_doc_errors(root, install_markers)
+
+            self.assertTrue(any("tree/v[^/\\s]+/skills/cairo-auditor" in error for error in errors), errors)
 
     def test_install_doc_errors_reports_missing_markers(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -146,18 +148,6 @@ policy:
 
             self.assertEqual(len(errors), 3)
             self.assertTrue(all("missing install markers" in error for error in errors), errors)
-
-    def test_install_doc_errors_supports_injected_marker_versions(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            baseline_markers = MODULE.build_install_markers(root, pinned_ref="v1.2.3")
-            build_minimal_repo(root, baseline_markers)
-
-            mismatch_markers = MODULE.build_install_markers(root, pinned_ref="v9.9.9")
-            errors = MODULE.install_doc_errors(root, mismatch_markers)
-
-            self.assertTrue(any("missing install markers" in error for error in errors), errors)
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -9,7 +9,92 @@ import { Callout, Steps, Step } from "@/components/docs";
 
 The `cairo-auditor` skill is the repo's security-review orchestrator for Cairo and Starknet code. It combines deterministic preflight checks with parallel audit passes and a strict merge/deduplication gate so the final report stays actionable.
 
+<p>
+  <img alt="tested Codex" src="https://img.shields.io/badge/tested-Codex-111827" />
+  <img alt="tested Claude Code" src="https://img.shields.io/badge/tested-Claude_Code-b45309" />
+  <img alt="tested Agent Skills CLI" src="https://img.shields.io/badge/tested-Agent_Skills_CLI-1d4ed8" />
+</p>
+
+<Callout type="success" title="Try it now">
+Audit the deterministic demo fixture first so you can verify the pipeline and get a real <code>security-review-*.md</code> artifact quickly.
+</Callout>
+
+```bash
+# Codex install
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+python3 "$CODEX_HOME/skills/.system/skill-installer/scripts/install-skill-from-github.py" \
+  --repo keep-starknet-strange/starknet-agentic \
+  --path skills/cairo-auditor \
+  --ref main
+```
+
+```text
+# Codex prompt
+Run cairo-auditor deep on skills/cairo-auditor/tests/fixtures/insecure_upgrade_controller/src/lib.cairo with --file-output.
+Output only the final report.
+```
+
+```text
+# Claude Code command
+/starknet-agentic-skills:cairo-auditor deep skills/cairo-auditor/tests/fixtures/insecure_upgrade_controller/src/lib.cairo --file-output
+```
+
+Expected artifact: `security-review-*.md`
+
+## Rendered report preview
+
+![Rendered cairo-auditor report preview](/images/skills/cairo-auditor-report-preview.png)
+
+## What LLMs miss
+
+`cairo-auditor` is strong on concrete exploitability. It is not your final authority for:
+
+- multi-transaction economic setups and incentive manipulation
+- unstated invariants or specification bugs
+- cross-protocol, oracle, or off-chain trust assumptions
+
+Use it to collapse obvious exploit paths early, then finish with tests and human review.
+
+## Audit pipeline
+
+```text
+repo / contract
+      |
+      v
+deterministic preflight
+      |
+      v
+4 vector specialists
+      |
+      +--> deep mode: +1 adversarial specialist
+      |
+      v
+dedupe + false-positive gate
+      |
+      v
+security-review-YYYYMMDD-HHMMSS.md
+```
+
 ## Installation
+
+### Codex
+
+```bash
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+python3 "$CODEX_HOME/skills/.system/skill-installer/scripts/install-skill-from-github.py" \
+  --repo keep-starknet-strange/starknet-agentic \
+  --path skills/cairo-auditor \
+  --ref main
+```
+
+### Claude Code Marketplace Bundle
+
+```text
+/plugin marketplace add keep-starknet-strange/starknet-agentic
+/plugin install starknet-agentic-skills@starknet-agentic-skills --scope user
+/reload-plugins
+/starknet-agentic-skills:cairo-auditor
+```
 
 ### Agent Skills CLI
 
@@ -17,13 +102,44 @@ The `cairo-auditor` skill is the repo's security-review orchestrator for Cairo a
 npx skills add keep-starknet-strange/starknet-agentic/skills/cairo-auditor
 ```
 
-### Claude Code Marketplace Bundle
+<Callout type="info" title="Claude Code scope">
+Use <code>--scope user</code> as the default. Use <code>--scope local</code> only when you intentionally want a repo-specific pinned plugin state.
+</Callout>
+
+## 30-Second Happy Path
+
+Run one deep audit and verify that the full specialist pipeline executed.
 
 ```text
-/plugin marketplace add keep-starknet-strange/starknet-agentic
-/plugin install starknet-agentic-skills@starknet-agentic-skills
-/starknet-agentic-skills:cairo-auditor
+# Codex prompt
+Run cairo-auditor deep on skills/cairo-auditor/tests/fixtures/insecure_upgrade_controller/src/lib.cairo with --file-output.
+Output only the final report.
 ```
+
+```text
+# Claude Code command
+/starknet-agentic-skills:cairo-auditor deep skills/cairo-auditor/tests/fixtures/insecure_upgrade_controller/src/lib.cairo --file-output
+```
+
+```bash
+# Verification
+# Copy WORKDIR=... from the first auditor turn before running these checks
+cat "$WORKDIR/cairo-audit-host-capabilities.json"
+wc -l "$WORKDIR"/cairo-audit-agent-*-bundle.md
+ls -lt security-review-*.md | head -n 1
+```
+
+Expected markers: `Execution Integrity: FULL`, `## Execution Trace`, Agent 1-4 vector rows, and Agent 5 adversarial row.
+
+## Deterministic Demo Target
+
+If you want a stable live-demo contract, clone this repository and audit:
+
+```text
+skills/cairo-auditor/tests/fixtures/insecure_upgrade_controller/src/lib.cairo
+```
+
+This fixture is intentionally vulnerable and should reliably produce three findings: missing access control on upgrade, missing timelock, and missing non-zero class-hash guard.
 
 ## Modes
 
@@ -43,7 +159,7 @@ npx skills add keep-starknet-strange/starknet-agentic/skills/cairo-auditor
 ## Deterministic Local Scan
 
 ```bash
-python3 scripts/quality/audit_local_repo.py \
+python3 skills/cairo-auditor/scripts/quality/audit_local_repo.py \
   --repo-root /path/to/your/cairo-repo \
   --scan-id my-audit
 ```

@@ -6,7 +6,6 @@ from __future__ import annotations
 import os
 import re
 import sys
-import warnings
 from pathlib import Path
 from typing import Any
 
@@ -14,10 +13,10 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_REPO_SLUG = "keep-starknet-strange/starknet-agentic"
+# Public docs intentionally expose a latest-install path on `main`.
+# Reproducible guidance is enforced separately via frozen-install markers.
 DEFAULT_PUBLIC_REF = "main"
-DEFAULT_PINNED_REF = "v0.2.2"
-SKILL_VERSION_FILE = Path("skills") / "cairo-auditor" / "VERSION"
-VERSION_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$")
+FROZEN_PUBLIC_REF_PLACEHOLDER = "<commit-sha>"
 PUBLIC_SKILLS = [
     "account-abstraction",
     "cairo-auditor",
@@ -37,25 +36,6 @@ PUBLIC_SKILLS = [
     "starknet-wallet",
     "starkzap-sdk",
 ]
-
-
-def _version_pinned_ref(root: Path = ROOT) -> str:
-    version_file = root / SKILL_VERSION_FILE
-    try:
-        version = version_file.read_text(encoding="utf-8").strip()
-    except OSError:
-        if root.resolve() == ROOT.resolve():
-            warnings.warn(
-                f"VERSION file not found at {version_file}; falling back to DEFAULT_PINNED_REF={DEFAULT_PINNED_REF!r}",
-                stacklevel=2,
-            )
-        return DEFAULT_PINNED_REF
-    normalized = version[1:] if version.startswith("v") else version
-    if not VERSION_PATTERN.match(normalized):
-        return DEFAULT_PINNED_REF
-    return f"v{normalized}"
-
-
 def _resolved_repo_slug() -> str:
     value = os.getenv("PUBLIC_REPO_SLUG")
     if value is None:
@@ -71,15 +51,8 @@ def _resolved_public_ref() -> str:
     return raw or DEFAULT_PUBLIC_REF
 
 
-def _resolved_pinned_ref(root: Path = ROOT) -> str:
-    explicit = (os.getenv("PUBLIC_PINNED_REF") or "").strip()
-    if explicit:
-        return explicit
-    return _version_pinned_ref(root)
-
-
-def _auditor_skill_url(repo_slug: str, ref: str) -> str:
-    return f"https://github.com/{repo_slug}/tree/{ref}/skills/cairo-auditor"
+def _codex_install_script() -> str:
+    return 'python3 "$CODEX_HOME/skills/.system/skill-installer/scripts/install-skill-from-github.py"'
 
 
 def build_install_markers(
@@ -87,32 +60,39 @@ def build_install_markers(
     *,
     repo_slug: str | None = None,
     public_ref: str | None = None,
-    pinned_ref: str | None = None,
 ) -> dict[Path, list[str]]:
     resolved_repo_slug = repo_slug or _resolved_repo_slug()
     resolved_public_ref = public_ref or _resolved_public_ref()
-    resolved_pinned_ref = pinned_ref or _resolved_pinned_ref(root)
 
     return {
         Path("README.md"): [
-            f"skill-installer install {_auditor_skill_url(resolved_repo_slug, resolved_public_ref)}",
-            f"skill-installer install {_auditor_skill_url(resolved_repo_slug, resolved_pinned_ref)}",
+            _codex_install_script(),
+            f"--repo {resolved_repo_slug}",
+            "--path skills/cairo-auditor",
+            f"--ref {resolved_public_ref}",
+            f"--ref {FROZEN_PUBLIC_REF_PLACEHOLDER}",
             f"/plugin marketplace add {resolved_repo_slug}",
-            "/plugin install starknet-agentic-skills@starknet-agentic-skills --scope local",
+            "/plugin install starknet-agentic-skills@starknet-agentic-skills --scope user",
             f"npx skills add {resolved_repo_slug}/skills/cairo-auditor",
         ],
         Path("skills/README.md"): [
-            f"skill-installer install {_auditor_skill_url(resolved_repo_slug, resolved_public_ref)}",
-            f"skill-installer install {_auditor_skill_url(resolved_repo_slug, resolved_pinned_ref)}",
-            "/plugin install starknet-agentic-skills@starknet-agentic-skills --scope local",
+            _codex_install_script(),
+            f"--repo {resolved_repo_slug}",
+            "--path skills/cairo-auditor",
+            f"--ref {resolved_public_ref}",
+            f"--ref {FROZEN_PUBLIC_REF_PLACEHOLDER}",
+            "/plugin install starknet-agentic-skills@starknet-agentic-skills --scope user",
             f"npx skills add {resolved_repo_slug}/skills/cairo-auditor",
             "./QUICKSTART_2MIN.md",
             "./TROUBLESHOOTING.md",
         ],
         Path("skills/cairo-auditor/README.md"): [
-            f"skill-installer install {_auditor_skill_url(resolved_repo_slug, resolved_public_ref)}",
-            f"skill-installer install {_auditor_skill_url(resolved_repo_slug, resolved_pinned_ref)}",
-            "/plugin install starknet-agentic-skills@starknet-agentic-skills --scope local",
+            _codex_install_script(),
+            f"--repo {resolved_repo_slug}",
+            "--path skills/cairo-auditor",
+            f"--ref {resolved_public_ref}",
+            f"--ref {FROZEN_PUBLIC_REF_PLACEHOLDER}",
+            "/plugin install starknet-agentic-skills@starknet-agentic-skills --scope user",
             f"npx skills add {resolved_repo_slug}/skills/cairo-auditor",
             "../QUICKSTART_2MIN.md",
             "../TROUBLESHOOTING.md",
@@ -122,7 +102,10 @@ def build_install_markers(
 
 FORBIDDEN_INSTALL_MARKERS = [
     "tree/<ref>/skills/cairo-auditor",
-    "`<ref>` can be a commit SHA or release tag.",
+    "skill-installer install https://github.com/",
+]
+FORBIDDEN_INSTALL_MARKER_PATTERNS = [
+    re.compile(r"tree/v[^/\s]+/skills/cairo-auditor"),
 ]
 
 
@@ -236,8 +219,12 @@ def install_doc_errors(root: Path = ROOT, install_markers: dict[Path, list[str]]
         if missing:
             errors.append(f"{path}: missing install markers: {', '.join(missing)}")
         forbidden = [marker for marker in FORBIDDEN_INSTALL_MARKERS if marker in content]
-        if forbidden:
-            errors.append(f"{path}: contains placeholder install markers: {', '.join(forbidden)}")
+        pattern_forbidden = [
+            pattern.pattern for pattern in FORBIDDEN_INSTALL_MARKER_PATTERNS if pattern.search(content)
+        ]
+        if forbidden or pattern_forbidden:
+            matched = forbidden + pattern_forbidden
+            errors.append(f"{path}: contains placeholder install markers: {', '.join(matched)}")
 
     return errors
 
