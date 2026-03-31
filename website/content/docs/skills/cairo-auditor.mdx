@@ -86,6 +86,8 @@ mod VulnerableUpgrade {
 EOF
 ```
 
+Windows users: create the same contents in a local file such as `test_vuln.cairo` with your editor or PowerShell, then run the same prompt against that file path.
+
 ```text
 Run cairo-auditor on /tmp/test_vuln.cairo with --file-output.
 Output only the final report.
@@ -180,7 +182,7 @@ ls -lt security-review-*.md | head -n 1
 
 If you need full host-integrity markers (`Execution Integrity: FULL`, specialist bundles, capability file), use the advanced verification flow from the source README after the first report lands.
 
-## Deterministic Repo Fixture (Maintainers / CI)
+## Deterministic Repo Fixture (Maintainers / Manual Regression)
 
 If you want the stable regression fixture used by this repository, clone `keep-starknet-strange/starknet-agentic` and audit:
 
@@ -189,6 +191,8 @@ skills/cairo-auditor/tests/fixtures/insecure_upgrade_controller/src/lib.cairo
 ```
 
 This fixture is intentionally vulnerable and should reliably produce three findings: missing access control on upgrade, missing timelock, and missing non-zero class-hash guard.
+
+This path is primarily for manual maintainer regression. Repository CI runs separate validation checks for the skill and report contract rather than asking users to invoke this fixture path directly.
 
 ## Modes
 

@@ -3,7 +3,7 @@
 Goal: get a concrete `security-review-*.md` artifact from `cairo-auditor` in under
 2 minutes.
 
-Use your own Cairo project first. If you do not have one handy, create a temporary `.cairo` file and run the same prompts against that path.
+Use your own Cairo project first. If you do not have one handy, create a temporary `.cairo` file using the [demo file instructions](./cairo-auditor/README.md#no-cairo-project-handy) and run the same prompts against that path.
 
 ## 1) Codex
 

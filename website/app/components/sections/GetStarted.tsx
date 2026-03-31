@@ -3,12 +3,12 @@ import { STEPS, EXTERNAL_LINKS } from "@/data/get-started";
 import { InstallCommand } from "@/components/Hero/InstallCommand";
 import { StepCard } from "@/components/ui/StepCard";
 
-const CODEX_CAIRO_AUDITOR_COMMAND = [
+const CODEX_CAIRO_AUDITOR_PROMPT = [
   "Run cairo-auditor on path/to/your_contract.cairo with --file-output.",
   "Output only the final report.",
 ].join("\n");
 
-const CLAUDE_CAIRO_AUDITOR_COMMAND = [
+const CLAUDE_CAIRO_AUDITOR_PROMPT = [
   "/starknet-agentic-skills:cairo-auditor path/to/your_contract.cairo --file-output",
 ].join("\n");
 
@@ -51,17 +51,21 @@ export function GetStarted() {
             </Link>
           </div>
 
+          <p className="mb-4 text-sm text-neo-dark/70">
+            First time here? Install the skill first from the guide, then come back and run one of the prompts below.
+          </p>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="border-2 border-neo-dark/10 rounded p-4">
               <p className="text-sm font-heading font-bold text-neo-dark mb-2">Codex</p>
               <code className="block whitespace-pre-wrap break-all text-xs md:text-sm bg-neo-dark text-white rounded px-3 py-3">
-                {CODEX_CAIRO_AUDITOR_COMMAND}
+                {CODEX_CAIRO_AUDITOR_PROMPT}
               </code>
             </div>
             <div className="border-2 border-neo-dark/10 rounded p-4">
               <p className="text-sm font-heading font-bold text-neo-dark mb-2">Claude Code</p>
               <code className="block whitespace-pre-wrap break-all text-xs md:text-sm bg-neo-dark text-white rounded px-3 py-3">
-                {CLAUDE_CAIRO_AUDITOR_COMMAND}
+                {CLAUDE_CAIRO_AUDITOR_PROMPT}
               </code>
             </div>
           </div>
