@@ -11,7 +11,7 @@
       "skill_md_path": "skills/account-abstraction/SKILL.md"
     },
     {
-      "description": "Security audit of Cairo/Starknet code. Trigger on \"audit\", \"check this contract\", \"review for security\". Modes - default (full repo), deep (+ adversarial reasoning), or specific filenames.",
+      "description": "Security audit of Cairo/Starknet smart contracts. Trigger on phrases like \"audit this Cairo contract\", \"Starknet security review\", \"check this .cairo file for vulnerabilities\", \"release-gate audit\", or invoking the `cairo-auditor` command. Supports default (full-repo `.cairo` scan), deep (adds adversarial reasoning agent), and targeted-file modes. Do NOT trigger for Solidity/EVM audits, dependency-vulnerability scans, or general code review.",
       "install": "npx skills add keep-starknet-strange/starknet-agentic/skills/cairo-auditor",
       "name": "cairo-auditor",
       "raw_skill_md_url": "https://raw.githubusercontent.com/keep-starknet-strange/starknet-agentic/main/skills/cairo-auditor/SKILL.md",
