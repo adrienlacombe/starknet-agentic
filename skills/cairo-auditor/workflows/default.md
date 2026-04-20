@@ -184,6 +184,8 @@ Transport resilience: if a specialist stalls or returns malformed output, retry 
 
 ## Turn 4 — Report
 
+This Turn is canonical for both default and deep modes; deep inherits the steps below (including the `--proven-only` cap), then adds the `[ADVERSARIAL]` evidence tag and any degraded-execution warnings ([deep.md Turn 4](deep.md#turn-4--report-deep-delta)).
+
 Merge all agent results and emit the report in canonical order:
 
 1. Deduplicate by root cause (keep the higher-confidence version, merge broader attack path details; on confidence tie keep higher priority, then more complete path evidence).
@@ -191,14 +193,15 @@ Merge all agent results and emit the report in canonical order:
    - Validate every finding has `[CODE-TRACE]`; if a source agent omitted it, add `[CODE-TRACE]` during merge normalization.
    - Add `[PREFLIGHT-HIT]` if the deterministic preflight flagged the same class or entry point.
    - Add `[CROSS-AGENT]` if 2+ agents independently reported the same root cause before deduplication.
-3. Findings with only `[CODE-TRACE]` (no additional tags) are valid but lower-signal; reviewers use the Evidence column in Findings Index to prioritize review order.
-4. Sort findings by priority (`P0` first); within each priority tier sort by confidence (highest first).
-5. Re-number findings sequentially starting at `1`.
-6. Insert one **Below Confidence Threshold** separator row in the findings index immediately before the first finding with confidence < 75.
-7. Print findings directly — do not re-draft or re-describe them.
-8. Always include sections in this exact order: `Signal Summary`, `Scope`, `Execution Trace`, `Findings`, `Dropped Candidates`, `Findings Index`.
-9. Add scope table and findings index table per `references/report-formatting.md`.
-10. Add the disclaimer.
+3. **Apply the `--proven-only` severity cap (if the flag was passed):** for any finding whose only evidence tag is `[CODE-TRACE]`, cap `severity` at `Low` before sorting. This must run before step 4 so the sort sees post-cap severity. Findings with stronger evidence (`[PREFLIGHT-HIT]`, `[CROSS-AGENT]`, `[ADVERSARIAL]` from deep mode) keep their original severity.
+4. Findings with only `[CODE-TRACE]` (no additional tags) are valid but lower-signal; reviewers use the Evidence column in Findings Index to prioritize review order.
+5. Sort findings by priority (`P0` first); within each priority tier sort by confidence (highest first).
+6. Re-number findings sequentially starting at `1`.
+7. Insert one **Below Confidence Threshold** separator row in the findings index immediately before the first finding with confidence < 75.
+8. Print findings directly — do not re-draft or re-describe them.
+9. Always include sections in this exact order: `Signal Summary`, `Scope`, `Execution Trace`, `Findings`, `Dropped Candidates`, `Findings Index`.
+10. Add scope table and findings index table per `references/report-formatting.md`.
+11. Add the disclaimer.
 
 ### Dropped-candidate handling
 

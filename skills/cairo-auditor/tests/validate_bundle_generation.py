@@ -9,6 +9,7 @@ that each specialist later consumes.
 
 from __future__ import annotations
 
+import shlex
 import shutil
 import subprocess
 import sys
@@ -27,17 +28,21 @@ REQUIRED_BUNDLE_MARKERS = (
 )
 
 
-def build_bundles(fixture: Path, workdir: Path) -> tuple[bool, str]:
+def build_bundles(fixture: Path, workdir: Path, bash_path: str) -> tuple[bool, str]:
     in_scope = workdir / "cairo-audit-files.txt"
     cairo_files = sorted(fixture.rglob("*.cairo"))
     if not cairo_files:
         return False, f"fixture {fixture} contained no .cairo files"
     in_scope.write_text("\n".join(str(p) for p in cairo_files) + "\n", encoding="utf-8")
 
+    refs_q = shlex.quote(str(REFS))
+    src_q = shlex.quote(str(fixture))
+    workdir_q = shlex.quote(str(workdir))
+
     script = f"""set -euo pipefail
-REFS={REFS!s}
-SRC={fixture!s}
-WORKDIR={workdir!s}
+REFS={refs_q}
+SRC={src_q}
+WORKDIR={workdir_q}
 IN_SCOPE="$WORKDIR/cairo-audit-files.txt"
 
 build_code_block() {{
@@ -68,7 +73,7 @@ for i in 1 2 3 4; do
 done
 """
     proc = subprocess.run(
-        ["bash", "-c", script],
+        [bash_path, "-c", script],
         text=True,
         capture_output=True,
         check=False,
@@ -92,10 +97,8 @@ def validate_bundles(workdir: Path) -> tuple[bool, str]:
         missing = [m for m in REQUIRED_BUNDLE_MARKERS if m not in content]
         if missing:
             return False, f"bundle {bundle} missing markers: {missing}"
-        attack_marker = f"attack-vectors-{i}"
-        # The file is concatenated as raw text; the content of the partition
-        # itself rather than a literal filename should appear. Check the partition
-        # source is included by ensuring its first heading is present.
+        # The file is concatenated as raw text; verify the per-agent attack-vectors
+        # partition is included by checking its first heading appears.
         partition_path = REFS / "attack-vectors" / f"attack-vectors-{i}.md"
         partition_first_line = partition_path.read_text(encoding="utf-8").splitlines()[0]
         if partition_first_line not in content:
@@ -107,17 +110,17 @@ def validate_bundles(workdir: Path) -> tuple[bool, str]:
     return True, "all 4 bundles exist, are non-empty, and contain required sections"
 
 
-def main() -> int:
+def main(bash_path: str) -> int:
     if not FIXTURE.exists():
         print(f"missing fixture: {FIXTURE}", file=sys.stderr)
         return 1
     if not (REFS / "judging.md").is_file():
-        print(f"missing references/judging.md", file=sys.stderr)
+        print("missing references/judging.md", file=sys.stderr)
         return 1
 
     with tempfile.TemporaryDirectory(prefix="cairo-auditor-bundles-") as tmp:
         workdir = Path(tmp)
-        ok, msg = build_bundles(FIXTURE, workdir)
+        ok, msg = build_bundles(FIXTURE, workdir, bash_path)
         print(msg)
         if not ok:
             print("\nbundle generation failed", file=sys.stderr)
@@ -134,7 +137,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    if shutil.which("bash") is None:
+    resolved_bash = shutil.which("bash")
+    if resolved_bash is None:
         print("bash not available; skipping", file=sys.stderr)
         raise SystemExit(0)
-    raise SystemExit(main())
+    raise SystemExit(main(resolved_bash))

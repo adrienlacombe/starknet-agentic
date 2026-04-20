@@ -73,15 +73,30 @@ def main() -> int:
     )
 
     # workflows/default.md must NOT silently re-implement deep-mode fail-closed
-    # logic — that is the deep workflow's responsibility. Verify default does
-    # not claim to handle CAUD-006.
+    # logic — that is the deep workflow's responsibility. Verify none of the
+    # deep-only markers leaked into default.
     default_content = DEFAULT_WORKFLOW.read_text(encoding="utf-8")
-    if "CAUD-006" in default_content:
+    forbidden_in_default = (
+        "CAUD-006",
+        "CAUD-007",
+        "CAUD-009",
+        "--allow-degraded",
+        "degraded-deep",
+        "WARNING: degraded execution (specialist agents unavailable)",
+        "WARNING: degraded execution may omit exploitable paths",
+    )
+    leaked = [m for m in forbidden_in_default if m in default_content]
+    if leaked:
         checks.append(
-            (False, "workflows/default.md should not duplicate CAUD-006 fail-closed logic")
+            (
+                False,
+                f"workflows/default.md leaked deep-only fail-closed markers: {leaked}",
+            )
         )
     else:
-        checks.append((True, "workflows/default.md does not duplicate CAUD-006 logic"))
+        checks.append(
+            (True, "workflows/default.md does not duplicate deep-only fail-closed markers")
+        )
 
     # references/report-formatting.md must enumerate the Execution Integrity
     # tri-state value the report carries when degraded.

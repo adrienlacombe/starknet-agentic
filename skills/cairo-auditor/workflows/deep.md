@@ -37,25 +37,29 @@ Run the [default Turn 1](default.md#turn-1--discover) base steps (workdir, file 
 
 ### Host Capability Preflight (Experimental)
 
-The host-capability preflight is an experimental hardening path. Use it when your host exposes specialist-agent capability checks. Run a lightweight check and emit a one-line status:
+The host-capability preflight is an experimental hardening path. Use it when your host exposes specialist-agent capability checks. Run the probes below and persist their results to `{workdir}/cairo-audit-host-capabilities.json`. Each probe records one of `OK`, `SKIPPED: <reason>`, or `FAILED: <reason>`. Probes are split into two classes with different blocking semantics:
+
+**Blocking probes (capability):** failure means deep mode cannot run as designed.
 
 - Detect host family: `codex`, `claude-code`, or `unknown`.
-- Verify Agent tool availability and ability to spawn specialist agents.
-- Deep mode requires 5 specialist agents total (Agents 1-4 + Agent 5 adversarial).
-- Verify threat-intel fetch capability via Bash:
-  - `command -v curl` must succeed, and
-  - `curl -sfI --connect-timeout 5 --max-time 10 https://starknet.io` must succeed.
+- Verify Agent tool availability and ability to spawn specialist agents (deep mode requires 5: Agents 1–4 + Agent 5 adversarial).
+
+**Non-blocking probes (connectivity / model availability):** record evidence; do not abort.
+
+- Threat-intel fetch capability via Bash. Each step records its own status:
+  - `command -v curl` → `OK` or `SKIPPED: no curl`.
+  - `curl -sfI --connect-timeout 5 --max-time 10 https://starknet.io` → `OK` or `FAILED: curl error <code>` or `SKIPPED: offline`.
 - For `codex` hosts, probe preferred model availability before spawn:
   - run one lightweight specialist probe using `model: gpt-5.4`,
-  - persist success/failure and fallback decision.
-- Persist preflight evidence to `{workdir}/cairo-audit-host-capabilities.json` when the probe is available.
+  - record `OK`, `FAILED`, and the chosen fallback in `cairo-audit-host-capabilities.json` (the model-routing fallback path in [Host-Aware Model Routing](#host-aware-model-routing) consumes this).
 
-If preflight fails (in hosts where preflight is enabled):
+**Failure handling:**
 
-- Without `--allow-degraded`: emit `CAUD-007`, print remediation, and stop before findings.
-- With `--allow-degraded`: continue in `degraded-deep` mode and keep explicit warning lines in scope and execution trace.
+- Capability failure (Agent tool unavailable) without `--allow-degraded`: emit `CAUD-007`, print remediation, stop before findings.
+- Capability failure with `--allow-degraded`: continue in `degraded-deep` mode and keep explicit warning lines in scope and execution trace.
+- Connectivity failure (threat-intel probes) is non-blocking by default: continue without threat-intel enrichment and mark Turn 2.5 as `SKIPPED`/`FAILED` in the execution trace. The `--strict-models` gate independently handles model-availability failures (see [strict-model gate](#host-aware-model-routing)).
 
-Remediation hints to print when preflight fails:
+Remediation hints to print when capability preflight fails:
 
 - `codex`: `codex features enable multi_agent`, then verify with `codex features list`, then restart the session.
 - `claude-code`: run `/reload-plugins`, update the installed plugin if needed, and retry deep mode.
