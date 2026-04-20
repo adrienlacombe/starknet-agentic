@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WORKDIR="${CAIRO_AUDITOR_WORKDIR:-/tmp}"
+WORKDIR="${CAIRO_AUDITOR_WORKDIR:-}"
 WORKDIR_EXPLICIT=0
+if [[ -n "$WORKDIR" ]]; then
+  WORKDIR_EXPLICIT=1
+fi
 REPORT_DIR="."
 REPORT_PATH=""
 REPORT_EXPLICIT=0
@@ -10,6 +13,9 @@ REPORT_EXPLICIT=0
 usage() {
   cat <<'EOF'
 Usage: bash skills/cairo-auditor/scripts/doctor.sh [--workdir PATH] [--report-dir PATH] [--report PATH]
+
+If --workdir is omitted and CAIRO_AUDITOR_WORKDIR is not set, the most recent
+cairo-auditor.* directory under $TMPDIR (or /tmp) is auto-discovered.
 
 Checks:
   - host-capabilities artifact exists
@@ -84,6 +90,41 @@ resolve_artifact_root() {
     echo "$preferred"
     return
   fi
+
+  # SKILL.md uses `mktemp -d "${TMPDIR:-/tmp}/cairo-auditor.XXXXXX"` per run.
+  # When no explicit --workdir is given, discover the most-recent matching
+  # directory under both $TMPDIR (if set) and /tmp.
+  local candidate=""
+  local newest=""
+  local newest_mtime=0
+  local search_root mtime
+  for search_root in "${TMPDIR:-}" "/tmp"; do
+    [[ -z "$search_root" ]] && continue
+    [[ ! -d "$search_root" ]] && continue
+    while IFS= read -r candidate; do
+      [[ -z "$candidate" ]] && continue
+      [[ ! -d "$candidate" ]] && continue
+      mtime=$(stat -f '%m' "$candidate" 2>/dev/null || stat -c '%Y' "$candidate" 2>/dev/null || echo 0)
+      if [[ "${mtime:-0}" -gt "$newest_mtime" ]]; then
+        newest_mtime="$mtime"
+        newest="$candidate"
+      fi
+    done < <(find "$search_root" -maxdepth 1 -type d -name 'cairo-auditor.*' 2>/dev/null)
+  done
+
+  if [[ -n "$newest" && -f "$newest/cairo-audit-host-capabilities.json" ]]; then
+    echo "$newest"
+    return
+  fi
+  if [[ -n "$newest" ]]; then
+    # Found a workdir but no host-capabilities artifact — return it so the
+    # caller can report the missing artifact rather than silently scanning /tmp.
+    echo "$newest"
+    return
+  fi
+
+  # Legacy fallback: artifacts may have been written directly to /tmp by an
+  # older orchestration path that did not use mktemp.
   if [[ -f "/tmp/cairo-audit-host-capabilities.json" ]]; then
     echo "/tmp"
     return
@@ -93,25 +134,30 @@ resolve_artifact_root() {
 
 ART_ROOT="$(resolve_artifact_root "$WORKDIR" "$WORKDIR_EXPLICIT")"
 
-if [[ -f "$ART_ROOT/cairo-audit-host-capabilities.json" ]]; then
-  say_ok "Host capabilities file: $ART_ROOT/cairo-audit-host-capabilities.json"
+if [[ -z "$ART_ROOT" ]]; then
+  say_fail "No cairo-auditor workdir found. Pass --workdir, set CAIRO_AUDITOR_WORKDIR, or run an audit first to create one."
 else
-  say_fail "Missing host capabilities file: $ART_ROOT/cairo-audit-host-capabilities.json"
-fi
-
-for i in 1 2 3 4; do
-  bundle="$ART_ROOT/cairo-audit-agent-$i-bundle.md"
-  if [[ ! -f "$bundle" ]]; then
-    say_fail "Missing bundle: $bundle"
-    continue
-  fi
-  lines="$(wc -l < "$bundle" | tr -d ' ')"
-  if [[ "${lines:-0}" -gt 0 ]]; then
-    say_ok "Bundle $i lines: $lines"
+  echo "Inspecting workdir: $ART_ROOT"
+  if [[ -f "$ART_ROOT/cairo-audit-host-capabilities.json" ]]; then
+    say_ok "Host capabilities file: $ART_ROOT/cairo-audit-host-capabilities.json"
   else
-    say_fail "Bundle $i is empty: $bundle"
+    say_fail "Missing host capabilities file: $ART_ROOT/cairo-audit-host-capabilities.json"
   fi
-done
+
+  for i in 1 2 3 4; do
+    bundle="$ART_ROOT/cairo-audit-agent-$i-bundle.md"
+    if [[ ! -f "$bundle" ]]; then
+      say_fail "Missing bundle: $bundle"
+      continue
+    fi
+    lines="$(wc -l < "$bundle" | tr -d ' ')"
+    if [[ "${lines:-0}" -gt 0 ]]; then
+      say_ok "Bundle $i lines: $lines"
+    else
+      say_fail "Bundle $i is empty: $bundle"
+    fi
+  done
+fi
 
 if [[ -z "$REPORT_PATH" ]]; then
   REPORT_PATH="$(ls -t "$REPORT_DIR"/security-review-*.md 2>/dev/null | head -n 1 || true)"
